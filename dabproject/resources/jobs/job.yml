@@ -1,0 +1,14 @@
+resources:
+  jobs:
+    ingest_job:
+      name: ingest_job
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ../../src/notebook/ingest.ipynb
+            base_parameters:
+              catalog_name: ${var.catalog_name}
+            source: WORKSPACE
+      queue:
+        enabled: true
+      performance_target: PERFORMANCE_OPTIMIZED
