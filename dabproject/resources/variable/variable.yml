@@ -1,0 +1,4 @@
+variables:
+  catalog_name:
+    default: assetbundles
+    
