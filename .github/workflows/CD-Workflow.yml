@@ -38,5 +38,10 @@ jobs:
 
       - name: Deploy to PROD
         run: |
+          databricks bundle validation \
+            --target prod
+
+      - name: Deploy to PROD
+        run: |
           databricks bundle deploy \
             --target prod 
