@@ -12,4 +12,4 @@ resources:
       channel: CURRENT
       catalog: ${var.catalog_name}
       serverless: true
-      root_path: ../../src/pipeline/demopipeline
+      root_path: ../../src/dabproject/pipeline/demopipeline
