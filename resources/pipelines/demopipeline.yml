@@ -13,9 +13,3 @@ resources:
       catalog: ${var.catalog_name}
       serverless: true
       root_path: ../../src/dabproject/pipeline/demopipeline
-
-Variable.yml
-
-variables:
-  catalog_name:
-    default: assetbundles
