@@ -12,9 +12,9 @@ include:
 # Variable declarations. These variables are assigned in the dev/prod targets below.
 variables:
   catalog:
-    default: "citibike_dev"
-  dev_flag:
-    default: true
+    description: The catalog to use
+  schema:
+    description: The schema to use
 
 targets:
   dev:
