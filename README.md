@@ -28,43 +28,54 @@ If you're developing with an IDE, dependencies for this project should be instal
 *  Run `uv sync --dev` to install the project's dependencies.
 
 
-# Using this project using the CLI
+---
+### Databricks CLI, Set-Up and Bundle Commands
 
-The Databricks workspace and IDE extensions provide a graphical interface for working
-with this project. It's also possible to interact with it directly using the CLI:
+1. Install the Databricks CLI
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+   ```
+   or alternatively on a MacOS if you need admin override
+   ```bash
+   sudo curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo sh
+   ```
 
-1. Authenticate to your Databricks workspace, if you have not done so already:
-    ```
-    $ databricks configure
+2. Authenticate to your Databricks workspace, if you have not done so already:
+    ```bash
+    databricks configure
     ```
 
-2. To deploy a development copy of this project, type:
-    ```
-    $ databricks bundle deploy --target dev
+3. To deploy a development copy of this project, type:
+    ```bash
+    databricks bundle deploy --target dev
     ```
     (Note that "dev" is the default target, so the `--target` parameter
     is optional here.)
 
     This deploys everything that's defined for this project.
-    For example, the default template would deploy a pipeline called
-    `[dev yourname] dabproject_etl` to your workspace.
-    You can find that resource by opening your workpace and clicking on **Jobs & Pipelines**.
+    For example, the default template would deploy a job called
+    `[dev yourname] dab_project_job` to your workspace.
+    You can find that job by opening your workspace and clicking on **Workflows**.
 
-3. Similarly, to deploy a production copy, type:
+4. Similarly, to deploy a production copy, type:
+   ```bash
+   databricks bundle deploy --target prod
    ```
-   $ databricks bundle deploy --target prod
-   ```
-   Note the default template has a includes a job that runs the pipeline every day
-   (defined in resources/sample_job.job.yml). The schedule
+
+   Note that the default job from the template has a schedule that runs every day
+   (defined in resources/dab_project.job.yml). The schedule
    is paused when deploying in development mode (see
    https://docs.databricks.com/dev-tools/bundles/deployment-modes.html).
 
-4. To run a job or pipeline, use the "run" command:
-   ```
-   $ databricks bundle run
+5. To run a job or pipeline, use the "run" command:
+   ```bash
+   databricks bundle run
    ```
 
-5. Finally, to run tests locally, use `pytest`:
-   ```
-   $ uv run pytest
-   ```
+6. Optionally, install developer tools such as the Databricks extension for Visual Studio Code from
+   https://docs.databricks.com/dev-tools/vscode-ext.html.
+
+7. For documentation on the Databricks asset bundles format used
+   for this project, and for CI/CD configuration, see
+   https://docs.databricks.com/dev-tools/bundles/index.html.
+
