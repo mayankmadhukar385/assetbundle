@@ -1,10 +1,13 @@
-name: CD Workflow (On Release Published)
+name: CD Workflow (Manual - Deploy PR to stage and prod)
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to deploy (e.g., 123)"
+        required: true
 
-run-name: Deploy release ${{ github.event.release.tag_name }} to stage and prod 
+run-name: Deploy PR #${{ inputs.pr_number }} to stage and prod
 
 jobs:
   cd-deploy-stage:
@@ -12,11 +15,31 @@ jobs:
     runs-on: ubuntu-latest
     environment: stage
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
-      - name: Checkout release tag
+      - name: Resolve PR HEAD SHA and validate base branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
+          BASE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')
+          echo "PR base branch: $BASE"
+          if [ "$BASE" != "main" ]; then
+            echo "ERROR: PR must target main. Found base=$BASE"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.pr.outputs.sha }}
           fetch-depth: 0
 
       - name: Setup Python
@@ -32,14 +55,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      # PAT auth via env vars (recommended)
       - name: Configure Databricks (PAT)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          # Optional: quick sanity check (won't print token)
-          databricks current-user me
+        run: databricks current-user me
 
       - name: Validate bundle
         env:
@@ -59,11 +79,32 @@ jobs:
     runs-on: ubuntu-latest
     environment: prod
 
+    permissions:
+      contents: read
+      pull-requests: read
+
     steps:
-      - name: Checkout release tag
+      # Resolve again (separate job). Same PR -> same SHA.
+      - name: Resolve PR HEAD SHA and validate base branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          REPO: ${{ github.repository }}
+        run: |
+          SHA=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.head.sha')
+          BASE=$(gh api "repos/$REPO/pulls/$PR_NUMBER" --jq '.base.ref')
+          echo "PR base branch: $BASE"
+          if [ "$BASE" != "main" ]; then
+            echo "ERROR: PR must target main. Found base=$BASE"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout PR code
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ steps.pr.outputs.sha }}
           fetch-depth: 0
 
       - name: Setup Python
@@ -79,14 +120,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      # PAT auth via env vars (recommended)
       - name: Configure Databricks (PAT)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          # Optional: quick sanity check (won't print token)
-          databricks current-user me
+        run: databricks current-user me
 
       - name: Validate bundle
         env:
