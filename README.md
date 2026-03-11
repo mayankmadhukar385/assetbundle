@@ -45,7 +45,14 @@ If you're developing with an IDE, dependencies for this project should be instal
     databricks configure
     ```
 
-3. To deploy a development copy of this project, type:
+3. To validate a development copy of this project, type:
+    ```bash
+    databricks bundle validate --target dev
+    ```
+    (Note that "dev" is the default target, so the `--target` parameter
+    is optional here.)
+   
+5. To deploy a development copy of this project, type:
     ```bash
     databricks bundle deploy --target dev
     ```
@@ -57,7 +64,7 @@ If you're developing with an IDE, dependencies for this project should be instal
     `[dev yourname] dab_project_job` to your workspace.
     You can find that job by opening your workspace and clicking on **Workflows**.
 
-4. Similarly, to deploy a production copy, type:
+6. Similarly, to deploy a production copy, type:
    ```bash
    databricks bundle deploy --target prod
    ```
@@ -67,15 +74,15 @@ If you're developing with an IDE, dependencies for this project should be instal
    is paused when deploying in development mode (see
    https://docs.databricks.com/dev-tools/bundles/deployment-modes.html).
 
-5. To run a job or pipeline, use the "run" command:
+7. To run a job or pipeline, use the "run" command:
    ```bash
    databricks bundle run
    ```
 
-6. Optionally, install developer tools such as the Databricks extension for Visual Studio Code from
+8. Optionally, install developer tools such as the Databricks extension for Visual Studio Code from
    https://docs.databricks.com/dev-tools/vscode-ext.html.
 
-7. For documentation on the Databricks asset bundles format used
+9. For documentation on the Databricks asset bundles format used
    for this project, and for CI/CD configuration, see
    https://docs.databricks.com/dev-tools/bundles/index.html.
 
