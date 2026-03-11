@@ -28,14 +28,14 @@ targets:
       name_prefix: dev_${workspace.current_user.short_name}
       source_linked_deployment: false
     workspace:
-      host: http://dbc-f258a182-511d.cloud.databricks.com/
+      host: https://dbc-f258a182-511d.cloud.databricks.com/
     variables:
       catalog: assetbundles
       schema: ${workspace.current_user.short_name}
   prod:
     mode: production
     workspace:
-      host: http://dbc-f258a182-511d.cloud.databricks.com/
+      host: https://dbc-f258a182-511d.cloud.databricks.com/
       # We explicitly deploy to /Workspace/Users/mayank.madhukar@pwc.com to make sure we only have a single copy.
       root_path: /Workspace/Users/mayank.madhukar@pwc.com/PROD_MM_TEST/.bundle/${bundle.name}/${bundle.target}
     variables:
