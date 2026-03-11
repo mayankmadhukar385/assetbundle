@@ -32,16 +32,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Configure Databricks
+      # PAT auth via env vars (recommended)
+      - name: Configure Databricks (PAT)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
-          cat <<EOF > ~/.databrickscfg
-          [TEST]
-          host      = https://sdnaldaks.com/
-          auth_type = databricks-cli
-          EOF
+          # Optional: quick sanity check (won't print token)
+          databricks current-user me
 
       - name: Validate bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks bundle validate --target prod
 
       - name: Deploy bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks bundle deploy --target prod
