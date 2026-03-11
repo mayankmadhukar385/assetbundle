@@ -32,6 +32,18 @@ targets:
     variables:
       catalog: assetbundles
       schema: ${workspace.current_user.short_name}
+  stage:
+    mode: production
+    workspace:
+      host: https://dbc-f258a182-511d.cloud.databricks.com/
+      # We explicitly deploy to /Workspace/Users/mayank.madhukar@pwc.com to make sure we only have a single copy.
+      root_path: /Workspace/Users/mayank.madhukar@pwc.com/STAGE/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: assetbundles
+      schema: Stage
+    permissions:
+      - user_name: mayank.madhukar@pwc.com
+        level: CAN_MANAGE
   prod:
     mode: production
     workspace:
