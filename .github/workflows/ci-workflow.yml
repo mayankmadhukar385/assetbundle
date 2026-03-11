@@ -1,21 +1,23 @@
 name: CI Workflow
 
 on:
-  push:
-    branches:
-      - 'feature/**'
-  pull_request:
-    branches:
-      - 'main'
+  pull_request_review:
+    types: [submitted]
 
 jobs:
   ci_job:
+    # only for PRs targeting main
+    if: ${{  github.event.pull_request.base.ref == 'main' }}
     name: CI Job
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
+        with:
+          # IMPORTANT: on pull_request_review, checkout the PR's HEAD commit
+          ref: ${{ github.event.pull_request.head.sha }}
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
