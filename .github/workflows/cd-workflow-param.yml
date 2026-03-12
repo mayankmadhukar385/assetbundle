@@ -9,7 +9,7 @@ on:
       bundle_folders:
         description: "Comma separated bundle folders to deploy (e.g., src,test)"
         required: false
-        default: ""  # empty default, so release trigger won't deploy everything
+        default: ""  # empty default to avoid deploying everything
 
 run-name: Deploy release ${{ github.event.release.tag_name || 'manual' }} to stage and prod
 
@@ -50,22 +50,21 @@ jobs:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
-          # Get comma-separated list from input, fallback to empty
           FOLDERS="${{ github.event.inputs.bundle_folders || '' }}"
 
-          # Exit if no folders selected (safety for release triggers)
           if [ -z "$FOLDERS" ]; then
             echo "No folders selected for deployment. Exiting."
             exit 0
           fi
 
-          # Split by comma and deploy each folder
           IFS=',' read -ra DIRS <<< "$FOLDERS"
 
           for DIR in "${DIRS[@]}"; do
             echo "Deploying bundle in $DIR to stage"
-            databricks bundle validate --bundle "$DIR" --target stage
-            databricks bundle deploy --bundle "$DIR" --target stage
+            cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
+            databricks bundle validate --target stage
+            databricks bundle deploy --target stage
+            cd - >/dev/null
           done
 
   cd-deploy-prod:
@@ -116,6 +115,8 @@ jobs:
 
           for DIR in "${DIRS[@]}"; do
             echo "Deploying bundle in $DIR to prod"
-            databricks bundle validate --bundle "$DIR" --target prod
-            databricks bundle deploy --bundle "$DIR" --target prod
+            cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
+            databricks bundle validate --target prod
+            databricks bundle deploy --target prod
+            cd - >/dev/null
           done
