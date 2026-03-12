@@ -54,24 +54,3 @@ jobs:
         run: |
           # Change 'notebooks' if your notebooks live elsewhere
           nbqa pylint resources --nbqa-shell
-
-      # -------------------------
-      # VALIDATE + DEPLOY DAB
-      # -------------------------
-      - name: Install Databricks CLI
-        uses: databricks/setup-cli@main
-
-      - name: Validate Databricks Bundle (dev target)
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          databricks bundle validate -t dev
-
-      - name: Deploy Databricks Bundle (dev target)
-        if: github.ref == 'refs/heads/main'
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          databricks bundle deploy -t dev
