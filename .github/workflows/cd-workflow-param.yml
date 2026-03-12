@@ -1,14 +1,14 @@
-name: Manual CD Workflow - Partial Deploy
+name: CD Workflow param
 
 on:
   workflow_dispatch:
     inputs:
       bundle_folders:
-        description: "Comma separated bundle folders to deploy (e.g., src,test)"
+        description: "Comma separated bundle folders to deploy (e.g., src_bundle,test_bundle)"
         required: true
         default: ""
 
-run-name: Manual CD Deployment with Partial Bundle Deploy
+run-name: Manual CD Deployment
 
 jobs:
   cd-deploy-stage:
@@ -18,7 +18,7 @@ jobs:
 
     steps:
       # 1️⃣ Checkout code
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -47,8 +47,8 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      # 6️⃣ Deploy selected folders to stage
-      - name: Deploy selected bundles to Stage
+      # 6️⃣ Deploy each selected folder to stage
+      - name: Deploy Selected Folders to Stage
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
@@ -62,9 +62,11 @@ jobs:
           IFS=',' read -ra DIRS <<< "$FOLDERS"
 
           for DIR in "${DIRS[@]}"; do
-            echo "Deploying folder '$DIR' to stage only (partial bundle deploy)"
-            databricks bundle validate --target stage --path "$DIR"
-            databricks bundle deploy --target stage --path "$DIR" 
+            echo "Deploying bundle folder '$DIR' to stage"
+            cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
+            databricks bundle validate --target stage
+            databricks bundle deploy --target stage --auto-approve
+            cd - >/dev/null
           done
 
   cd-deploy-prod:
@@ -75,7 +77,7 @@ jobs:
 
     steps:
       # 1️⃣ Checkout code
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -104,8 +106,8 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      # 6️⃣ Deploy selected folders to prod
-      - name: Deploy selected bundles to Prod
+      # 6️⃣ Deploy each selected folder to prod
+      - name: Deploy Selected Folders to Prod
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
@@ -119,7 +121,9 @@ jobs:
           IFS=',' read -ra DIRS <<< "$FOLDERS"
 
           for DIR in "${DIRS[@]}"; do
-            echo "Deploying folder '$DIR' to prod only (partial bundle deploy)"
-            databricks bundle validate --target prod --path "$DIR"
-            databricks bundle deploy --target prod --path "$DIR" 
+            echo "Deploying bundle folder '$DIR' to prod"
+            cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
+            databricks bundle validate --target prod
+            databricks bundle deploy --target prod --auto-approve
+            cd - >/dev/null
           done
