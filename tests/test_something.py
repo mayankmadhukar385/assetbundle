@@ -1,2 +1,2 @@
 def test_sanity():
-    assert 2 + 2 == 4
+    assert 6 + 6 == 12
