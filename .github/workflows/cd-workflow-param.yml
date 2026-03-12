@@ -1,9 +1,6 @@
 name: CD Workflow Param
 
 on:
-  release:
-    types: [published]
-
   workflow_dispatch:
     inputs:
       bundle_folders:
@@ -11,7 +8,7 @@ on:
         required: false
         default: "."
 
-run-name: Deploy release ${{ github.event.release.tag_name || 'manual' }} to stage and prod
+run-name: Deploy release ${{ github.event.release.tag_name || 'manual' }}
 
 jobs:
   cd-deploy-stage:
@@ -39,28 +36,35 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Configure Databricks
+      - name: Configure Databricks (PAT)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      - name: Deploy selected bundles to stage
+      - name: Set bundle folder
+        run: |
+          if [ -z "${{ inputs.bundle_folder }}" ]; then
+            echo "BUNDLE_PATH=." >> $GITHUB_ENV
+          else
+            echo "BUNDLE_PATH=bundles/${{ inputs.bundle_folder }}" >> $GITHUB_ENV
+          fi
+
+      - name: Validate bundle (stage)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
-          FOLDERS="${{ github.event.inputs.bundle_folders || '.' }}"
+          cd $BUNDLE_PATH
+          databricks bundle validate --target stage
 
-          IFS=',' read -ra DIRS <<< "$FOLDERS"
-
-          for DIR in "${DIRS[@]}"; do
-            echo "Deploying bundle in $DIR to stage"
-            cd $DIR
-            databricks bundle validate --target stage
-            databricks bundle deploy --target stage
-            cd -
-          done
+      - name: Deploy bundle (stage)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          cd $BUNDLE_PATH
+          databricks bundle deploy --target stage
 
   cd-deploy-prod:
     name: Deploy to prod
@@ -88,25 +92,32 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Configure Databricks
+      - name: Configure Databricks (PAT)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      - name: Deploy selected bundles to prod
+      - name: Set bundle folder
+        run: |
+          if [ -z "${{ inputs.bundle_folder }}" ]; then
+            echo "BUNDLE_PATH=." >> $GITHUB_ENV
+          else
+            echo "BUNDLE_PATH=bundles/${{ inputs.bundle_folder }}" >> $GITHUB_ENV
+          fi
+
+      - name: Validate bundle (prod)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
-          FOLDERS="${{ github.event.inputs.bundle_folders || '.' }}"
+          cd $BUNDLE_PATH
+          databricks bundle validate --target prod
 
-          IFS=',' read -ra DIRS <<< "$FOLDERS"
-
-          for DIR in "${DIRS[@]}"; do
-            echo "Deploying bundle in $DIR to prod"
-            cd $DIR
-            databricks bundle validate --target prod
-            databricks bundle deploy --target prod
-            cd -
-          done
+      - name: Deploy bundle (prod)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          cd $BUNDLE_PATH
+          databricks bundle deploy --target prod
