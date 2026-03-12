@@ -1,0 +1,145 @@
+name: CD Workflow - Isolated Folder Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_folders:
+        description: "Comma separated bundle folders to deploy (e.g., src,test)"
+        required: true
+        default: ""
+
+run-name: Manual CD Deployment (Isolated Folders)
+
+jobs:
+  cd-deploy-stage:
+    name: Deploy to Stage
+    runs-on: ubuntu-latest
+    environment: stage
+
+    steps:
+      # 1️⃣ Checkout repo (full repo for temp copy)
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      # 2️⃣ Setup Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3️⃣ Install Databricks CLI
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      # 4️⃣ Install Python dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+
+      # 5️⃣ Configure Databricks
+      - name: Configure Databricks
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks current-user me
+
+      # 6️⃣ Deploy selected folders to stage in isolated temp folders
+      - name: Deploy Selected Folders to Stage
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          FOLDERS="${{ github.event.inputs.bundle_folders }}"
+          if [ -z "$FOLDERS" ]; then
+            echo "No folders specified. Exiting."
+            exit 1
+          fi
+
+          IFS=',' read -ra DIRS <<< "$FOLDERS"
+
+          for DIR in "${DIRS[@]}"; do
+            echo "Deploying folder '$DIR' to stage in isolated workspace"
+            
+            # Create temp directory
+            TMP_DIR=$(mktemp -d)
+            echo "Copying $DIR to temp directory $TMP_DIR"
+            cp -r "$DIR" "$TMP_DIR/"
+            
+            # Deploy from temp folder
+            cd "$TMP_DIR/$DIR" || { echo "Folder $DIR missing in temp"; exit 1; }
+            databricks bundle validate --target stage
+            databricks bundle deploy --target stage --auto-approve
+            cd - >/dev/null
+
+            # Cleanup temp folder
+            rm -rf "$TMP_DIR"
+          done
+
+  cd-deploy-prod:
+    name: Deploy to Prod
+    needs: cd-deploy-stage
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      # 1️⃣ Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      # 2️⃣ Setup Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3️⃣ Install Databricks CLI
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      # 4️⃣ Install Python dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+
+      # 5️⃣ Configure Databricks
+      - name: Configure Databricks
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks current-user me
+
+      # 6️⃣ Deploy selected folders to prod in isolated temp folders
+      - name: Deploy Selected Folders to Prod
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          FOLDERS="${{ github.event.inputs.bundle_folders }}"
+          if [ -z "$FOLDERS" ]; then
+            echo "No folders specified. Exiting."
+            exit 1
+          fi
+
+          IFS=',' read -ra DIRS <<< "$FOLDERS"
+
+          for DIR in "${DIRS[@]}"; do
+            echo "Deploying folder '$DIR' to prod in isolated workspace"
+            
+            TMP_DIR=$(mktemp -d)
+            cp -r "$DIR" "$TMP_DIR/"
+            
+            cd "$TMP_DIR/$DIR" || { echo "Folder $DIR missing in temp"; exit 1; }
+            databricks bundle validate --target prod
+            databricks bundle deploy --target prod --auto-approve
+            cd - >/dev/null
+
+            rm -rf "$TMP_DIR"
+          done
