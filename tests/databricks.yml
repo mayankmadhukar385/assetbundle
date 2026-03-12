@@ -29,7 +29,7 @@ targets:
     mode: production
     workspace:
       host: https://dbc-f258a182-511d.cloud.databricks.com/
-      root_path: /Workspace/Users/mayank.madhukar@pwc.com/STAGE/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/mayank.madhukar@pwc.com/STAGE/.bundle/${bundle.name}/${bundle.target}/tests
     variables:
       catalog: assetbundles
       schema: Stage
@@ -41,7 +41,7 @@ targets:
     mode: production
     workspace:
       host: https://dbc-f258a182-511d.cloud.databricks.com/
-      root_path: /Workspace/Users/mayank.madhukar@pwc.com/PROD_MM_TEST/test/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/mayank.madhukar@pwc.com/PROD_MM_TEST/test/.bundle/${bundle.name}/${bundle.target}/tests
     variables:
       catalog: assetbundles
       schema: prod
