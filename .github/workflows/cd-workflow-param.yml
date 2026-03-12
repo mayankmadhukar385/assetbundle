@@ -1,4 +1,4 @@
-name: CD Workflow Param
+name: Manual CD Workflow - Partial Deploy
 
 on:
   workflow_dispatch:
@@ -6,9 +6,9 @@ on:
       bundle_folders:
         description: "Comma separated bundle folders to deploy (e.g., src,test)"
         required: true
-        default: ""  # Must select at least one folder
+        default: ""
 
-run-name: Manual CD Deployment
+run-name: Manual CD Deployment with Partial Bundle Deploy
 
 jobs:
   cd-deploy-stage:
@@ -17,84 +17,11 @@ jobs:
     environment: stage
 
     steps:
-      # 1️⃣ Checkout repo using sparse checkout
-      - name: Checkout code (sparse)
+      # 1️⃣ Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          sparse-checkout: true
-          ref: ${{ github.ref }}  # Manual run will use branch/tag selected
-
-      # 2️⃣ Setup Python
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      # 3️⃣ Install Databricks CLI
-      - name: Install Databricks CLI
-        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
-
-      # 4️⃣ Install Python dependencies
-      - name: Install Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install setuptools wheel
-
-      # 5️⃣ Configure Databricks
-      - name: Configure Databricks
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: databricks current-user me
-
-      # 6️⃣ Set sparse folders
-      - name: Select folders to deploy
-        run: |
-          FOLDERS="${{ github.event.inputs.bundle_folders }}"
-          if [ -z "$FOLDERS" ]; then
-            echo "No folders specified. Exiting."
-            exit 1
-          fi
-          echo "Deploying folders: $FOLDERS"
-
-          IFS=',' read -ra DIRS <<< "$FOLDERS"
-
-          # Sparse checkout only the selected folders
-          for DIR in "${DIRS[@]}"; do
-            git sparse-checkout set "$DIR"
-          done
-
-          # Save DIRS to environment for later steps
-          echo "DIRS=${DIRS[*]}" >> $GITHUB_ENV
-
-      # 7️⃣ Deploy each folder to stage
-      - name: Deploy to Stage
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          for DIR in $DIRS; do
-            echo "Deploying $DIR to stage"
-            cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
-            databricks bundle validate --target stage
-            databricks bundle deploy --target stage --auto-approve
-            cd - >/dev/null
-          done
-
-  cd-deploy-prod:
-    name: Deploy to Prod
-    needs: cd-deploy-stage
-    runs-on: ubuntu-latest
-    environment: prod
-
-    steps:
-      # 1️⃣ Checkout repo using sparse checkout
-      - name: Checkout code (sparse)
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          sparse-checkout: true
           ref: ${{ github.ref }}
 
       # 2️⃣ Setup Python
@@ -120,8 +47,8 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      # 6️⃣ Deploy each folder to prod
-      - name: Deploy to Prod
+      # 6️⃣ Deploy selected folders to stage
+      - name: Deploy selected bundles to Stage
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
@@ -135,9 +62,64 @@ jobs:
           IFS=',' read -ra DIRS <<< "$FOLDERS"
 
           for DIR in "${DIRS[@]}"; do
-            echo "Deploying $DIR to prod"
-            cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
-            databricks bundle validate --target prod
-            databricks bundle deploy --target prod --auto-approve
-            cd - >/dev/null
+            echo "Deploying folder '$DIR' to stage only (partial bundle deploy)"
+            databricks bundle validate --target stage --path "$DIR"
+            databricks bundle deploy --target stage --path "$DIR" 
+          done
+
+  cd-deploy-prod:
+    name: Deploy to Prod
+    needs: cd-deploy-stage
+    runs-on: ubuntu-latest
+    environment: prod
+
+    steps:
+      # 1️⃣ Checkout code
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
+
+      # 2️⃣ Setup Python
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3️⃣ Install Databricks CLI
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      # 4️⃣ Install Python dependencies
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+
+      # 5️⃣ Configure Databricks
+      - name: Configure Databricks
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks current-user me
+
+      # 6️⃣ Deploy selected folders to prod
+      - name: Deploy selected bundles to Prod
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          FOLDERS="${{ github.event.inputs.bundle_folders }}"
+          if [ -z "$FOLDERS" ]; then
+            echo "No folders specified. Exiting."
+            exit 1
+          fi
+
+          IFS=',' read -ra DIRS <<< "$FOLDERS"
+
+          for DIR in "${DIRS[@]}"; do
+            echo "Deploying folder '$DIR' to prod only (partial bundle deploy)"
+            databricks bundle validate --target prod --path "$DIR"
+            databricks bundle deploy --target prod --path "$DIR" 
           done
