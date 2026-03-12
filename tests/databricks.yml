@@ -1,5 +1,5 @@
 bundle:
-  name: test
+  name: dabproject
   uuid: b3f4d1c9-7f2e-4d80-9f21-2e3f5c4d5a6b  # generate a new UUID for this bundle
 
 include:
@@ -29,7 +29,7 @@ targets:
     mode: production
     workspace:
       host: https://dbc-f258a182-511d.cloud.databricks.com/
-      root_path: /Workspace/Users/mayank.madhukar@pwc.com/STAGE/test/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Users/mayank.madhukar@pwc.com/STAGE/.bundle/${bundle.name}/${bundle.target}
     variables:
       catalog: assetbundles
       schema: Stage
