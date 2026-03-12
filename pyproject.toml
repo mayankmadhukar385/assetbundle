@@ -36,33 +36,29 @@ build-backend = "hatchling.build"
 line-length = 120
 
 # -------------------------
-# Pylint configuration
+# Pylint configuration (Databricks-friendly)
 # -------------------------
-[tool.pylint.main]
-# If you *don't* use a src/ layout, remove this line.
-source-roots = ["src"]
-
-# Avoid linting virtual envs / build outputs / bundle artifacts
-ignore-paths = [
-    "^\\.venv/.*$",
-    "^build/.*$",
-    "^dist/.*$",
-    "^\\.git/.*$",
-    "^\\.databricks/.*$",
-]
-
 [tool.pylint.format]
 max-line-length = 120
 
 [tool.pylint.messages_control]
-# Keep onboarding smooth; tighten over time
 disable = [
+    # Docstring noise (optional)
     "missing-module-docstring",
     "missing-class-docstring",
     "missing-function-docstring",
+
+    # Ruff handles formatting/import sorting; keep pylint focused on correctness
     "line-too-long",
-    "too-few-public-methods",
+    "wrong-import-order",
+
+    # Databricks/CI environment gaps (e.g., dlt not available in CI)
+    "import-error",
 ]
+
+[tool.pylint.variables]
+# Databricks runtime-injected globals
+additional-builtins = ["spark", "dbutils", "display"]
 
 [tool.pylint.reports]
 score = false

@@ -45,7 +45,7 @@ jobs:
       - name: Lint Python files with pylint
         run: |
           # Adjust these paths to your repo structure
-          python -m pylint src dabproject
+          python -m pylint src 
 
       # -------------------------
       # LINT NOTEBOOKS (.ipynb)

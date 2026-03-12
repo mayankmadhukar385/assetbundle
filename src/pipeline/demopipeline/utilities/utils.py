@@ -1,6 +1,7 @@
+import re
+
 from pyspark.sql.functions import udf
 from pyspark.sql.types import BooleanType
-import re
 
 @udf(returnType=BooleanType())
 def is_valid_email(email):
