@@ -78,7 +78,7 @@ jobs:
             echo "Deploying $DIR to stage"
             cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
             databricks bundle validate --target stage
-            databricks bundle deploy --target stage
+            databricks bundle deploy --target stage --auto-approve
             cd - >/dev/null
           done
 
@@ -138,6 +138,6 @@ jobs:
             echo "Deploying $DIR to prod"
             cd "$DIR" || { echo "Folder $DIR not found"; exit 1; }
             databricks bundle validate --target prod
-            databricks bundle deploy --target prod
+            databricks bundle deploy --target prod --auto-approve
             cd - >/dev/null
           done
