@@ -53,7 +53,7 @@ jobs:
       - name: Lint notebooks with nbqa + pylint
         run: |
           # Change 'notebooks' if your notebooks live elsewhere
-          nbqa pylint notebooks --nbqa-shell
+          nbqa pylint resources --nbqa-shell
 
       # -------------------------
       # VALIDATE + DEPLOY DAB
