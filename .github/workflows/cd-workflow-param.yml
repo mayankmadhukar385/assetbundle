@@ -1,4 +1,4 @@
-name: CD Workflow (On Release Published)
+name: CD Workflow Param
 
 on:
   release:
