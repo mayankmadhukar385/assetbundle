@@ -1,14 +1,17 @@
 name: CD Workflow Param
 
 on:
+  release:
+    types: [published]
+
   workflow_dispatch:
     inputs:
       bundle_folders:
-        description: "Comma separated bundle folders to deploy"
+        description: "Comma separated bundle folders to deploy (e.g., src,test)"
         required: false
-        default: "."
+        default: ""  # empty default, so release trigger won't deploy everything
 
-run-name: Deploy release ${{ github.event.release.tag_name || 'manual' }}
+run-name: Deploy release ${{ github.event.release.tag_name || 'manual' }} to stage and prod
 
 jobs:
   cd-deploy-stage:
@@ -36,35 +39,34 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Configure Databricks (PAT)
+      - name: Configure Databricks
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      - name: Set bundle folder
+      - name: Deploy selected bundles to stage
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
-          if [ -z "${{ inputs.bundle_folder }}" ]; then
-            echo "BUNDLE_PATH=." >> $GITHUB_ENV
-          else
-            echo "BUNDLE_PATH=bundles/${{ inputs.bundle_folder }}" >> $GITHUB_ENV
+          # Get comma-separated list from input, fallback to empty
+          FOLDERS="${{ github.event.inputs.bundle_folders || '' }}"
+
+          # Exit if no folders selected (safety for release triggers)
+          if [ -z "$FOLDERS" ]; then
+            echo "No folders selected for deployment. Exiting."
+            exit 0
           fi
 
-      - name: Validate bundle (stage)
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          cd $BUNDLE_PATH
-          databricks bundle validate --target stage
+          # Split by comma and deploy each folder
+          IFS=',' read -ra DIRS <<< "$FOLDERS"
 
-      - name: Deploy bundle (stage)
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          cd $BUNDLE_PATH
-          databricks bundle deploy --target stage
+          for DIR in "${DIRS[@]}"; do
+            echo "Deploying bundle in $DIR to stage"
+            databricks bundle validate --bundle "$DIR" --target stage
+            databricks bundle deploy --bundle "$DIR" --target stage
+          done
 
   cd-deploy-prod:
     name: Deploy to prod
@@ -92,32 +94,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel
 
-      - name: Configure Databricks (PAT)
+      - name: Configure Databricks
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      - name: Set bundle folder
+      - name: Deploy selected bundles to prod
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: |
-          if [ -z "${{ inputs.bundle_folder }}" ]; then
-            echo "BUNDLE_PATH=." >> $GITHUB_ENV
-          else
-            echo "BUNDLE_PATH=bundles/${{ inputs.bundle_folder }}" >> $GITHUB_ENV
+          FOLDERS="${{ github.event.inputs.bundle_folders || '' }}"
+
+          if [ -z "$FOLDERS" ]; then
+            echo "No folders selected for deployment. Exiting."
+            exit 0
           fi
 
-      - name: Validate bundle (prod)
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          cd $BUNDLE_PATH
-          databricks bundle validate --target prod
+          IFS=',' read -ra DIRS <<< "$FOLDERS"
 
-      - name: Deploy bundle (prod)
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          cd $BUNDLE_PATH
-          databricks bundle deploy --target prod
+          for DIR in "${DIRS[@]}"; do
+            echo "Deploying bundle in $DIR to prod"
+            databricks bundle validate --bundle "$DIR" --target prod
+            databricks bundle deploy --bundle "$DIR" --target prod
+          done
