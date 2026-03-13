@@ -22,8 +22,7 @@ class TestPrimeFinder:
             (-5, False),
             (4, False),
             (9, False),
-            (15, False),
-            (18,True)
+            (15, False)
         ],
     )
     def test_is_prime(self, value, expected):
