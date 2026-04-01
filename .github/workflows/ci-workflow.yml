@@ -33,34 +33,20 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Your existing runtime deps
           pip install -r requirements-pyspark.txt
-
-          # Test + lint tooling (explicit install avoids pyproject metadata issues)
           pip install "pytest>=8.0.0" "pytest-html>=4.1.1"
           pip install "pylint>=3.2.0" "nbqa>=1.8.0"
 
-      # -------------------------
-      # LINT PYTHON FILES (.py)
-      # -------------------------
       - name: Lint Python files with pylint
         run: |
-          # Adjust these paths to your repo structure
-          python -m pylint src 
+          python -m pylint src
 
-      # -------------------------
-      # LINT NOTEBOOKS (.ipynb)
-      # -------------------------
       - name: Lint notebooks with nbqa + pylint
         run: |
-          # Change 'notebooks' if your notebooks live elsewhere
           nbqa pylint resources --nbqa-shell
-      # -------------------------
-      # RUN UNIT TESTS
-      # -------------------------
+
       - name: Run pytest
         run: |
-          # If your tests are in ./tests this will auto-discover
           pytest -q --disable-warnings --maxfail=1 \
             --html=pytest_report.html --self-contained-html
 
@@ -70,3 +56,48 @@ jobs:
         with:
           name: pytest-report
           path: pytest_report.html
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (dev)
+        working-directory: terraform/envs/dev
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST_DEV }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: mayank_dev
+          TF_VAR_environment: dev
+        run: terraform init
+
+      - name: Terraform Validate (dev)
+        working-directory: terraform/envs/dev
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST_DEV }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: mayank_dev
+          TF_VAR_environment: dev
+        run: terraform validate
+
+      - name: Terraform Plan (dev)
+        working-directory: terraform/envs/dev
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST_DEV }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: mayank_dev
+          TF_VAR_environment: dev
+        run: terraform plan -input=false
+
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      - name: Bundle Validate (dev)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST_DEV }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+        run: databricks bundle validate --target dev
