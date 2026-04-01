@@ -66,8 +66,8 @@ jobs:
       - name: Terraform Init (dev)
         working-directory: terraform/envs/dev
         env:
-          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST_DEV }}
-          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_HOST }}
           TF_VAR_catalog_name: assetbundles
           TF_VAR_schema_name: mayank_dev
           TF_VAR_environment: dev
@@ -76,8 +76,8 @@ jobs:
       - name: Terraform Validate (dev)
         working-directory: terraform/envs/dev
         env:
-          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST_DEV }}
-          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_HOST }}
           TF_VAR_catalog_name: assetbundles
           TF_VAR_schema_name: mayank_dev
           TF_VAR_environment: dev
@@ -86,8 +86,8 @@ jobs:
       - name: Terraform Plan (dev)
         working-directory: terraform/envs/dev
         env:
-          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST_DEV }}
-          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_HOST }}
           TF_VAR_catalog_name: assetbundles
           TF_VAR_schema_name: mayank_dev
           TF_VAR_environment: dev
@@ -98,6 +98,6 @@ jobs:
 
       - name: Bundle Validate (dev)
         env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST_DEV }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN_DEV }}
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_HOST }}
         run: databricks bundle validate --target stage
