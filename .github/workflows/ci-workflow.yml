@@ -100,4 +100,4 @@ jobs:
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_HOST }}
-        run: databricks bundle validate --target stage
+        run: databricks bundle validate --target dev
