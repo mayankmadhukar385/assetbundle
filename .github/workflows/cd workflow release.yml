@@ -7,12 +7,41 @@ on:
 run-name: Deploy release ${{ github.event.release.tag_name }} to stage and prod
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: release-deploy-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
+  verify-release-source:
+    name: Verify release tag is from main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag commit belongs to main
+        run: |
+          git fetch origin main --no-tags --depth=1
+
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_SHA=$(git rev-list -n 1 "$TAG_NAME")
+
+          echo "Release tag: $TAG_NAME"
+          echo "Release tag SHA: $TAG_SHA"
+
+          if ! git branch -r --contains "$TAG_SHA" | grep -q "origin/main"; then
+            echo "ERROR: Release tag does not point to a commit on main."
+            exit 1
+          fi
+
   cd-deploy-stage:
     name: Deploy to stage
+    needs: verify-release-source
     runs-on: ubuntu-latest
     environment: stage
     timeout-minutes: 60
@@ -46,6 +75,12 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
+      - name: Validate bundle (stage)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate --target stage
+
       - name: Deploy bundle
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
@@ -54,7 +89,9 @@ jobs:
 
   cd-deploy-prod:
     name: Deploy to prod
-    needs: cd-deploy-stage
+    needs:
+      - verify-release-source
+      - cd-deploy-stage
     runs-on: ubuntu-latest
     environment: prod
     timeout-minutes: 60
@@ -127,6 +164,12 @@ jobs:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
+
+      - name: Validate bundle (prod)
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate --target prod
 
       - name: Deploy bundle
         env:
