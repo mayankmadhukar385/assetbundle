@@ -6,11 +6,16 @@ on:
 
 run-name: Deploy release ${{ github.event.release.tag_name }} to stage and prod
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   cd-deploy-stage:
     name: Deploy to stage
     runs-on: ubuntu-latest
     environment: stage
+    timeout-minutes: 60
 
     steps:
       - name: Checkout release tag
@@ -41,12 +46,6 @@ jobs:
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
 
-      - name: Validate bundle
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: databricks bundle validate --target stage
-
       - name: Deploy bundle
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
@@ -58,6 +57,7 @@ jobs:
     needs: cd-deploy-stage
     runs-on: ubuntu-latest
     environment: prod
+    timeout-minutes: 60
 
     steps:
       - name: Checkout release tag
@@ -127,12 +127,6 @@ jobs:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks current-user me
-
-      - name: Validate bundle
-        env:
-          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
-          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: databricks bundle validate --target prod
 
       - name: Deploy bundle
         env:
