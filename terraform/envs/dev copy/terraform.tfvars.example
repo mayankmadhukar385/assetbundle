@@ -1,4 +1,0 @@
-databricks_host = "https://dbc-f258a182-511d.cloud.databricks.com"
-catalog_name    = "assetbundles"
-schema_name     = "mayank_dev"
-environment     = "dev"

@@ -1,4 +1,16 @@
-databricks_host = "https://dbc-f258a182-511d.cloud.databricks.com"
-catalog_name    = "assetbundles"
-schema_name     = "mayank_dev"
-environment     = "dev"
+databricks_host        = "https://dbc-f258a182-511d.cloud.databricks.com"
+catalog_name           = "assetbundles"
+schema_name            = "prod"
+environment            = "prod"
+force_destroy_catalog  = false
+
+secret_scope_name      = "shared-prod"
+engineers_group_name   = "data-engineers-prod"
+analysts_group_name    = "data-analysts-prod"
+cluster_policy_name    = "job-policy-prod"
+
+default_node_type_id   = "i3.xlarge"
+min_workers            = 1
+max_workers            = 4
+default_workers        = 2
+autotermination_minutes = 20

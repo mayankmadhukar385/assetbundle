@@ -1,14 +1,3 @@
-variable "databricks_host" {
-  description = "Databricks workspace URL"
-  type        = string
-}
-
-variable "databricks_token" {
-  description = "Databricks PAT"
-  type        = string
-  sensitive   = true
-}
-
 variable "catalog_name" {
   description = "Unity Catalog catalog name"
   type        = string
@@ -22,4 +11,10 @@ variable "schema_name" {
 variable "environment" {
   description = "Environment name"
   type        = string
+}
+
+variable "force_destroy_catalog" {
+  description = "Whether to force destroy catalog on delete"
+  type        = bool
+  default     = false
 }

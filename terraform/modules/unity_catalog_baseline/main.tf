@@ -1,7 +1,7 @@
 resource "databricks_catalog" "catalog" {
   name          = var.catalog_name
   comment       = "Managed by Terraform for ${var.environment}"
-  force_destroy = false
+  force_destroy = var.force_destroy_catalog
 }
 
 resource "databricks_schema" "schema" {
