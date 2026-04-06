@@ -6,7 +6,6 @@
 # - databricks_cluster_policy
 
 resource "databricks_secret_scope" "shared" {
-  count = var.secret_scope_name != null ? 1 : 0
   name  = var.secret_scope_name
 }
 
