@@ -1,32 +1,26 @@
 variable "databricks_host" {
   description = "Databricks workspace URL"
   type        = string
-  default = null
 }
 
 variable "databricks_token" {
   description = "Databricks token"
   type        = string
-  sensitive   = true
-  default = null
 }
 
 variable "catalog_name" {
   description = "Unity Catalog catalog name"
   type        = string
-  default = null
 }
 
 variable "schema_name" {
   description = "Unity Catalog schema name"
   type        = string
-  default = null
 }
 
 variable "environment" {
   description = "Environment name"
   type        = string
-  default = null
 }
 
 variable "force_destroy_catalog" {
