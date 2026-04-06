@@ -6,7 +6,8 @@
 # - databricks_cluster_policy
 
 resource "databricks_secret_scope" "shared" {
-  name = var.secret_scope_name
+  count = var.secret_scope_name != null ? 1 : 0
+  name  = var.secret_scope_name
 }
 
 resource "databricks_secret_acl" "engineers_manage_scope" {
