@@ -1,27 +1,32 @@
 variable "databricks_host" {
   description = "Databricks workspace URL"
   type        = string
+  default = null
 }
 
 variable "databricks_token" {
   description = "Databricks token"
   type        = string
   sensitive   = true
+  default = null
 }
 
 variable "catalog_name" {
   description = "Unity Catalog catalog name"
   type        = string
+  default = null
 }
 
 variable "schema_name" {
   description = "Unity Catalog schema name"
   type        = string
+  default = null
 }
 
 variable "environment" {
   description = "Environment name"
   type        = string
+  default = null
 }
 
 variable "force_destroy_catalog" {
@@ -33,21 +38,25 @@ variable "force_destroy_catalog" {
 variable "secret_scope_name" {
   description = "Databricks secret scope name"
   type        = string
+  default = null
 }
 
 variable "engineers_group_name" {
   description = "Existing engineers group name"
   type        = string
+  default = null
 }
 
 variable "analysts_group_name" {
   description = "Existing analysts group name"
   type        = string
+  default = null
 }
 
 variable "cluster_policy_name" {
   description = "Cluster policy name"
   type        = string
+  default = null
 }
 
 variable "default_node_type_id" {
