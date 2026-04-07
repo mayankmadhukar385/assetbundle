@@ -1,0 +1,232 @@
+name: CD Selective Deploy (By PR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Optional: base commit SHA/tag/branch. Leave empty to auto-use last-deployed tag."
+        required: false
+        default: ""
+      pr_numbers:
+        description: "Comma-separated PR numbers to cherry-pick and deploy (e.g., 42,58,73)"
+        required: true
+      target_env:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+      dry_run:
+        description: "Dry run (validate only, no deploy)"
+        required: false
+        type: boolean
+        default: false
+
+run-name: "Selective deploy PRs [${{ inputs.pr_numbers }}] → ${{ inputs.target_env }}"
+
+concurrency:
+  group: selective-deploy-${{ inputs.target_env }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  selective-deploy:
+    name: "Deploy PRs #${{ inputs.pr_numbers }} to ${{ inputs.target_env }}"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve base ref
+        id: baseline
+        run: |
+          BASE_REF="${{ inputs.base_ref }}"
+          TAG="last-deployed-${{ inputs.target_env }}"
+
+          if [ -n "$BASE_REF" ]; then
+            # User provided an explicit base ref
+            if ! BASELINE_SHA=$(git rev-parse "$BASE_REF" 2>/dev/null); then
+              echo "ERROR: Could not resolve '$BASE_REF'."
+              exit 1
+            fi
+            echo "Using provided base_ref '$BASE_REF' → $BASELINE_SHA"
+          elif git rev-parse "$TAG" >/dev/null 2>&1; then
+            # Auto-detect from last-deployed tag
+            BASELINE_SHA=$(git rev-list -n 1 "$TAG")
+            echo "Using auto-detected tag '$TAG' → $BASELINE_SHA"
+          else
+            # First-ever deploy: use initial commit
+            BASELINE_SHA=$(git rev-list --max-parents=0 HEAD)
+            echo "No tag found, no base_ref provided. Using initial commit $BASELINE_SHA"
+          fi
+
+          echo "baseline_sha=$BASELINE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Cherry-pick selected PRs onto baseline
+        id: cherrypick
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASELINE="${{ steps.baseline.outputs.baseline_sha }}"
+          PR_LIST="${{ inputs.pr_numbers }}"
+
+          # Create a temp branch from the last deployed state
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b temp-selective-deploy "$BASELINE"
+
+          IFS=',' read -ra PRS <<< "$PR_LIST"
+          APPLIED_PRS=""
+
+          for PR in "${PRS[@]}"; do
+            PR=$(echo "$PR" | xargs)  # trim whitespace
+            echo "========================================="
+            echo "Processing PR #$PR"
+            echo "========================================="
+
+            # Validate PR exists and is merged
+            STATE=$(gh api "repos/$REPO/pulls/$PR" --jq '.state')
+            MERGED=$(gh api "repos/$REPO/pulls/$PR" --jq '.merged')
+            BASE=$(gh api "repos/$REPO/pulls/$PR" --jq '.base.ref')
+            MERGE_SHA=$(gh api "repos/$REPO/pulls/$PR" --jq '.merge_commit_sha')
+
+            echo "PR #$PR: state=$STATE merged=$MERGED base=$BASE merge_sha=$MERGE_SHA"
+
+            if [ "$MERGED" != "true" ]; then
+              echo "ERROR: PR #$PR is not merged. Aborting."
+              exit 1
+            fi
+
+            if [ "$BASE" != "main" ]; then
+              echo "ERROR: PR #$PR targets '$BASE', not 'main'. Aborting."
+              exit 1
+            fi
+
+            # Get the commits from this PR (in order)
+            echo "Fetching commits for PR #$PR..."
+            COMMITS=$(gh api "repos/$REPO/pulls/$PR/commits" --jq '.[].sha')
+
+            for COMMIT in $COMMITS; do
+              echo "Cherry-picking commit $COMMIT from PR #$PR"
+              if ! git cherry-pick "$COMMIT" --no-edit --strategy-option=theirs 2>/dev/null; then
+                echo "Conflict during cherry-pick of $COMMIT. Auto-resolving with theirs strategy."
+                git checkout --theirs .
+                git add -A
+                git cherry-pick --continue --no-edit || true
+              fi
+            done
+
+            APPLIED_PRS="$APPLIED_PRS #$PR"
+            echo "PR #$PR applied successfully."
+          done
+
+          echo "All PRs applied:$APPLIED_PRS"
+          echo "applied_prs=$APPLIED_PRS" >> "$GITHUB_OUTPUT"
+
+      - name: Show changes being deployed
+        run: |
+          echo "Files changed from baseline:"
+          git diff --name-only ${{ steps.baseline.outputs.baseline_sha }} HEAD
+          echo ""
+          echo "Diff stat:"
+          git diff --stat ${{ steps.baseline.outputs.baseline_sha }} HEAD
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel
+
+      - name: Setup Terraform
+        if: inputs.target_env == 'prod'
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        if: inputs.target_env == 'prod'
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform init
+
+      - name: Terraform Plan
+        if: inputs.target_env == 'prod'
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform plan -input=false
+
+      - name: Terraform Apply
+        if: inputs.target_env == 'prod' && inputs.dry_run == false
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform apply -auto-approve -input=false
+
+      - name: Check Databricks auth
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks current-user me
+
+      - name: Validate bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle validate --target ${{ inputs.target_env }}
+
+      - name: Deploy bundle
+        if: inputs.dry_run == false
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: databricks bundle deploy --target ${{ inputs.target_env }}
+
+      - name: Tag last deployed commit
+        if: inputs.dry_run == false
+        run: |
+          TAG="last-deployed-${{ inputs.target_env }}"
+          DEPLOY_SHA=$(git rev-parse HEAD)
+
+          git tag -f "$TAG" "$DEPLOY_SHA"
+          git push origin "$TAG" --force
+
+          echo "========================================="
+          echo "DEPLOY COMPLETE"
+          echo "========================================="
+          echo "Base:        ${{ steps.baseline.outputs.baseline_sha }}"
+          echo "PRs applied: ${{ steps.cherrypick.outputs.applied_prs }}"
+          echo "Target env:  ${{ inputs.target_env }}"
+          echo "Deploy SHA:  $DEPLOY_SHA"
+          echo "Tagged as:   $TAG"
+          echo "========================================="

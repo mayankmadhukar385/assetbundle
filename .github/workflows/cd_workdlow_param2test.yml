@@ -6,7 +6,7 @@ on:
       bundle_folders:
         description: "Comma separated bundle folders to deploy (e.g., src,test)"
         required: true
-        default: ""
+        type: string
 
 run-name: Manual CD Deployment (Isolated Folders)
 
