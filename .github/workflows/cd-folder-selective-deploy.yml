@@ -6,9 +6,11 @@ on:
       pr_number:
         description: "PR number to deploy"
         required: true
+        type: string
       deploy_paths:
         description: "Comma-separated paths to deploy (e.g., src/notebook,resources/jobs or src/notebook/file.py). Leave empty to see all changed files first."
         required: false
+        type: string
         default: ""
       target_env:
         description: "Target environment"
@@ -28,7 +30,7 @@ on:
         type: boolean
         default: false
 
-run-name: "Path deploy PR #${{ inputs.pr_number }} [${{ inputs.deploy_paths || 'detect' }}] → ${{ inputs.target_env }}"
+run-name: "Path deploy PR #${{ inputs.pr_number }} [${{ inputs.deploy_paths || 'detect' }}] to ${{ inputs.target_env }}"
 
 concurrency:
   group: path-deploy-${{ inputs.target_env }}
