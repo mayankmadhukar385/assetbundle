@@ -1,0 +1,238 @@
+
+  ═══════════════════════════════════════════════════════════════════════
+        TERRAFORM ENVIRONMENT STRATEGIES — ADVANTAGES & DISADVANTAGES
+  ═══════════════════════════════════════════════════════════════════════
+
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │          MODEL 1 : PARAMETERIZED APPROACH (Single Root)             │
+  │          ──────────────────────────────────────────────              │
+  │                                                                     │
+  │   Structure:                                                        │
+  │     project-root/                                                   │
+  │     ├── main.tf                                                     │
+  │     ├── variables.tf                                                │
+  │     ├── outputs.tf                                                  │
+  │     ├── providers.tf                                                │
+  │     ├── backend.tf                                                  │
+  │     ├── envs/                                                       │
+  │     │   ├── dev.tfvars                                              │
+  │     │   ├── uat.tfvars                                              │
+  │     │   └── prod.tfvars                                             │
+  │     └── modules/                                                    │
+  │         ├── vpc/                                                     │
+  │         ├── ec2/                                                     │
+  │         └── rds/                                                     │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ADVANTAGES
+  ──────────
+
+   1. MINIMAL CODE DUPLICATION
+      - Single set of .tf files shared across all environments
+      - Only .tfvars files differ per environment
+      - Bug fixes and updates apply to all environments at once
+
+   2. EASIER MAINTENANCE
+      - One place to update resource definitions
+      - Reduces risk of configuration drift between environments
+      - Smaller codebase to review and manage
+
+   3. CONSISTENCY ACROSS ENVIRONMENTS
+      - All environments use the exact same Terraform logic
+      - Guarantees dev, uat, and prod are structurally identical
+      - Easier to enforce standards and compliance
+
+   4. FASTER ONBOARDING
+      - New team members learn one structure
+      - Adding a new environment = just adding a new .tfvars file
+      - Less cognitive overhead
+
+   5. SIMPLER CI/CD PIPELINE
+      - One workflow with an environment input parameter
+      - Pipeline logic is straightforward:
+        terraform plan -var-file=envs/<env>.tfvars
+
+   6. DRY PRINCIPLE (Don't Repeat Yourself)
+      - Follows software engineering best practices
+      - Less code = fewer places for bugs to hide
+
+
+  DISADVANTAGES
+  ─────────────
+
+   1. SHARED STATE RISK
+      - If workspace or -var-file is misconfigured, you could
+        accidentally apply dev changes to prod
+      - Requires strict CI/CD guardrails to prevent cross-env errors
+
+   2. LIMITED ENVIRONMENT DIVERGENCE
+      - Hard to have environment-specific resources
+        (e.g., extra monitoring only in prod)
+      - Conditional logic (count, for_each) can make code complex
+
+   3. BLAST RADIUS
+      - A bad change to main.tf affects ALL environments
+      - No way to test a structural change in dev without
+        it being available in prod code path
+
+   4. COMPLEX VARIABLE MANAGEMENT
+      - As environments grow, .tfvars files can become large
+      - Difficult to manage environment-specific overrides cleanly
+
+   5. STATE FILE MANAGEMENT
+      - Requires Terraform workspaces or dynamic backend config
+        to isolate state per environment
+      - Workspace misuse can lead to state corruption
+
+   6. HARDER ROLLBACK
+      - Rolling back one environment means rolling back the
+        shared code, which may affect other environments
+
+
+  ═══════════════════════════════════════════════════════════════════════
+
+
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │          MODEL 2 : SEPARATE FOLDER APPROACH (Per Environment)       │
+  │          ────────────────────────────────────────────────────        │
+  │                                                                     │
+  │   Structure:                                                        │
+  │     project-root/                                                   │
+  │     ├── environments/                                               │
+  │     │   ├── dev/                                                    │
+  │     │   │   ├── main.tf                                             │
+  │     │   │   ├── variables.tf                                        │
+  │     │   │   ├── backend.tf                                          │
+  │     │   │   └── terraform.tfvars                                    │
+  │     │   ├── uat/                                                    │
+  │     │   │   ├── main.tf                                             │
+  │     │   │   ├── backend.tf                                          │
+  │     │   │   └── terraform.tfvars                                    │
+  │     │   └── prod/                                                   │
+  │     │       ├── main.tf                                             │
+  │     │       ├── backend.tf                                          │
+  │     │       └── terraform.tfvars                                    │
+  │     └── modules/                                                    │
+  │         ├── vpc/                                                     │
+  │         ├── ec2/                                                     │
+  │         └── rds/                                                     │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
+
+  ADVANTAGES
+  ──────────
+
+   1. FULL ENVIRONMENT ISOLATION
+      - Each environment has its own directory and state file
+      - Zero risk of accidentally applying to the wrong environment
+      - Complete separation of concerns
+
+   2. INDEPENDENT DEPLOYMENTS
+      - Can deploy dev without touching uat or prod
+      - Each environment can be at a different version
+      - Supports progressive rollout strategies
+
+   3. ENVIRONMENT-SPECIFIC CUSTOMIZATION
+      - Easy to add resources only in certain environments
+        (e.g., extra logging in prod, reduced infra in dev)
+      - No need for conditional logic or count hacks
+
+   4. SAFER FOR PRODUCTION
+      - Prod folder can have stricter review and approval gates
+      - Changes can be tested in dev/uat folders first, then
+        manually promoted to prod
+      - Reduces accidental production impact
+
+   5. INDEPENDENT STATE MANAGEMENT
+      - Each folder has its own backend.tf
+      - No workspace confusion
+      - State files are naturally isolated
+
+   6. EASIER ROLLBACK
+      - Can roll back one environment independently
+      - Git history per folder makes it clear what changed where
+
+   7. TEAM SCALABILITY
+      - Different teams can own different environment folders
+      - Parallel development without merge conflicts
+
+
+  DISADVANTAGES
+  ─────────────
+
+   1. CODE DUPLICATION
+      - main.tf, variables.tf, providers.tf are repeated per env
+      - Changes must be manually copied across all folders
+      - Higher risk of environments drifting apart over time
+
+   2. HARDER TO KEEP ENVIRONMENTS IN SYNC
+      - A fix in dev/ must be manually replicated to uat/ and prod/
+      - Easy to forget updating one environment
+      - Requires discipline or automation to stay consistent
+
+   3. LARGER CODEBASE
+      - More files to manage, review, and maintain
+      - PR reviews become longer
+      - Increased repository size
+
+   4. MORE COMPLEX CI/CD
+      - Pipeline must know which folder to target
+      - May need separate workflows or matrix strategies
+      - More pipeline configuration to maintain
+
+   5. SLOWER ONBOARDING
+      - New developers must understand the folder convention
+      - More files to navigate
+      - Can be confusing if folders have diverged
+
+   6. MODULE VERSION DRIFT
+      - Different env folders might reference different module
+        versions if not carefully managed
+      - Can lead to inconsistent infrastructure
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                          SIDE-BY-SIDE COMPARISON
+  ═══════════════════════════════════════════════════════════════════════
+
+   ┌──────────────────────┬──────────────────────┬──────────────────────┐
+   │      CRITERIA        │    PARAMETERIZED     │   SEPARATE FOLDER    │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Code Duplication     │   ✅ Minimal          │   ❌ High             │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Environment Isolation│   ❌ Shared code      │   ✅ Full isolation   │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Maintenance Effort   │   ✅ Low              │   ❌ Higher           │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Production Safety    │   ❌ Risk if miscfg   │   ✅ Safer            │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Customization        │   ❌ Needs conditionals│  ✅ Easy per-env     │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ State Management     │   ❌ Workspace needed │   ✅ Natural isolation│
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ CI/CD Complexity     │   ✅ Simple           │   ❌ More complex     │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Rollback             │   ❌ Affects all envs │   ✅ Per-env rollback │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Team Scalability     │   ❌ Merge conflicts  │   ✅ Parallel work    │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Onboarding Speed     │   ✅ Fast             │   ❌ Slower           │
+   ├──────────────────────┼──────────────────────┼──────────────────────┤
+   │ Consistency          │   ✅ Guaranteed        │   ❌ Manual effort    │
+   └──────────────────────┴──────────────────────┴──────────────────────┘
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                            RECOMMENDATION
+  ═══════════════════════════════════════════════════════════════════════
+
+   • Small teams / simple infra     →  PARAMETERIZED approach
+   • Large teams / strict compliance →  SEPARATE FOLDER approach
+   • Hybrid option                   →  Separate folders that call
+                                        shared modules (best of both)
+
+  ═══════════════════════════════════════════════════════════════════════
