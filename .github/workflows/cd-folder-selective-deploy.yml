@@ -1,0 +1,368 @@
+name: CD Path-Selective Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "PR number to deploy"
+        required: true
+      deploy_paths:
+        description: "Comma-separated paths to deploy (e.g., src/notebook,resources/jobs or src/notebook/file.py). Leave empty to see all changed files first."
+        required: false
+        default: ""
+      target_env:
+        description: "Target environment"
+        required: true
+        type: choice
+        options:
+          - stage
+          - prod
+      deploy_remaining:
+        description: "Also deploy remaining paths (requires approval gate)?"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Dry run (validate only, no deploy)"
+        required: false
+        type: boolean
+        default: false
+
+run-name: "Path deploy PR #${{ inputs.pr_number }} [${{ inputs.deploy_paths || 'detect' }}] → ${{ inputs.target_env }}"
+
+concurrency:
+  group: path-deploy-${{ inputs.target_env }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  # ── Phase 1: Analyze changed files and deploy selected paths ──
+  analyze-and-deploy:
+    name: "Analyze & deploy selected paths"
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}
+    timeout-minutes: 60
+    outputs:
+      changed_files: ${{ steps.detect.outputs.changed_files }}
+      deployed_paths: ${{ steps.filter.outputs.deployed_paths }}
+      remaining_files: ${{ steps.filter.outputs.remaining_files }}
+      has_remaining: ${{ steps.filter.outputs.has_remaining }}
+      baseline_sha: ${{ steps.baseline.outputs.baseline_sha }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve baseline
+        id: baseline
+        run: |
+          TAG="last-deployed-${{ inputs.target_env }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            SHA=$(git rev-list -n 1 "$TAG")
+          else
+            SHA=$(git rev-list --max-parents=0 HEAD)
+          fi
+          echo "baseline_sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Detect all changed files in PR
+        id: detect
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          PR="${{ inputs.pr_number }}"
+          FILES=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
+
+          echo "========================================="
+          echo "PR #$PR — all changed files:"
+          echo "$FILES"
+          echo "========================================="
+
+          if [ -z "$FILES" ]; then
+            echo "ERROR: No changes detected in PR #$PR"
+            exit 1
+          fi
+
+          # Store as comma-separated for output
+          FILES_CSV=$(echo "$FILES" | tr '\n' ',' | sed 's/,$//')
+          echo "changed_files=$FILES_CSV" >> "$GITHUB_OUTPUT"
+
+      - name: Determine files to deploy now vs later
+        id: filter
+        run: |
+          CHANGED="${{ steps.detect.outputs.changed_files }}"
+          SELECTED="${{ inputs.deploy_paths }}"
+
+          if [ -z "$SELECTED" ]; then
+            echo "========================================="
+            echo "NO PATHS SELECTED — showing all changed files."
+            echo ""
+            echo "Changed files:"
+            echo "$CHANGED" | tr ',' '\n'
+            echo ""
+            echo "Re-run with deploy_paths set to paths you want to deploy."
+            echo "Examples:"
+            echo "  src/notebook              → all files under src/notebook/"
+            echo "  src/notebook/my_file.py   → just that one file"
+            echo "  src/notebook,resources/jobs → multiple paths"
+            echo "========================================="
+            echo "deployed_paths=" >> "$GITHUB_OUTPUT"
+            echo "remaining_files=$CHANGED" >> "$GITHUB_OUTPUT"
+            echo "has_remaining=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Split changed files and selected paths
+          IFS=',' read -ra ALL_FILES <<< "$CHANGED"
+          IFS=',' read -ra PATHS <<< "$SELECTED"
+
+          DEPLOY_FILES=""
+          REMAINING=""
+
+          for file in "${ALL_FILES[@]}"; do
+            file=$(echo "$file" | xargs)
+            MATCH=false
+            for p in "${PATHS[@]}"; do
+              p=$(echo "$p" | xargs)
+              # Match if file equals path exactly OR file starts with path/
+              if [ "$file" = "$p" ] || [[ "$file" == "$p/"* ]]; then
+                MATCH=true
+                break
+              fi
+            done
+            if [ "$MATCH" = true ]; then
+              DEPLOY_FILES="${DEPLOY_FILES:+$DEPLOY_FILES,}$file"
+            else
+              REMAINING="${REMAINING:+$REMAINING,}$file"
+            fi
+          done
+
+          echo "========================================="
+          echo "Deploying now:  $(echo $DEPLOY_FILES | tr ',' '\n')"
+          echo "Remaining:      ${REMAINING:-none}"
+          echo "========================================="
+
+          echo "deployed_paths=$DEPLOY_FILES" >> "$GITHUB_OUTPUT"
+          echo "remaining_files=$REMAINING" >> "$GITHUB_OUTPUT"
+          echo "has_remaining=$( [ -n "$REMAINING" ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+
+      - name: Cherry-pick PR onto baseline (selected paths only)
+        if: steps.filter.outputs.deployed_paths != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASELINE="${{ steps.baseline.outputs.baseline_sha }}"
+          PR="${{ inputs.pr_number }}"
+          DEPLOY_FILES="${{ steps.filter.outputs.deployed_paths }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b temp-path-deploy "$BASELINE"
+
+          # Cherry-pick all PR commits
+          COMMITS=$(gh api "repos/$REPO/pulls/$PR/commits" --jq '.[].sha')
+          for COMMIT in $COMMITS; do
+            git cherry-pick "$COMMIT" --no-edit --strategy-option=theirs 2>/dev/null || {
+              git checkout --theirs . && git add -A && git cherry-pick --continue --no-edit || true
+            }
+          done
+
+          # Revert everything NOT in the deploy list
+          IFS=',' read -ra KEEP_FILES <<< "$DEPLOY_FILES"
+          CHANGED=$(git diff --name-only "$BASELINE" HEAD)
+          for file in $CHANGED; do
+            ALLOWED=false
+            for kf in "${KEEP_FILES[@]}"; do
+              kf=$(echo "$kf" | xargs)
+              [ "$file" = "$kf" ] && ALLOWED=true && break
+            done
+            if [ "$ALLOWED" = false ]; then
+              echo "Reverting: $file"
+              git checkout "$BASELINE" -- "$file" 2>/dev/null || git rm -f "$file" 2>/dev/null || true
+            fi
+          done
+
+          git add -A
+          git diff --cached --quiet || git commit -m "Scoped deploy: PR #$PR paths [${{ inputs.deploy_paths }}]"
+
+          echo ""
+          echo "Files being deployed:"
+          git diff --name-only "$BASELINE" HEAD
+
+      - name: Setup Python
+        if: steps.filter.outputs.deployed_paths != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Databricks CLI
+        if: steps.filter.outputs.deployed_paths != ''
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      - name: Install Dependencies
+        if: steps.filter.outputs.deployed_paths != ''
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Setup & Apply Terraform
+        if: steps.filter.outputs.deployed_paths != '' && inputs.target_env == 'prod'
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: |
+          terraform init
+          terraform plan -input=false
+          ${{ inputs.dry_run == false && 'terraform apply -auto-approve -input=false' || 'echo "Dry run: skipping apply"' }}
+
+      - name: Validate & Deploy bundle
+        if: steps.filter.outputs.deployed_paths != ''
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          databricks bundle validate --target ${{ inputs.target_env }}
+          ${{ inputs.dry_run == false && format('databricks bundle deploy --target {0}', inputs.target_env) || 'echo "Dry run: skipping deploy"' }}
+
+      - name: Tag deployed state
+        if: steps.filter.outputs.deployed_paths != '' && inputs.dry_run == false
+        run: |
+          TAG="last-deployed-${{ inputs.target_env }}"
+          git tag -f "$TAG" HEAD
+          git push origin "$TAG" --force
+          echo "Tagged HEAD as $TAG"
+
+      - name: Summary
+        run: |
+          echo "## Path-Selective Deploy Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Item | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| PR | #${{ inputs.pr_number }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Selected paths | ${{ inputs.deploy_paths || 'none (detection only)' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Files deployed | ${{ steps.filter.outputs.deployed_paths || 'none' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Files remaining | ${{ steps.filter.outputs.remaining_files || 'none' }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | ${{ inputs.target_env }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Dry run | ${{ inputs.dry_run }} |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Phase 2: Deploy remaining files (requires approval) ──
+  deploy-remaining:
+    name: "Deploy remaining files (approval required)"
+    needs: analyze-and-deploy
+    if: needs.analyze-and-deploy.outputs.has_remaining == 'true' && inputs.deploy_remaining == true
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target_env }}-remaining-approval
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Cherry-pick PR (remaining files only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASELINE="${{ needs.analyze-and-deploy.outputs.baseline_sha }}"
+          PR="${{ inputs.pr_number }}"
+          REMAINING="${{ needs.analyze-and-deploy.outputs.remaining_files }}"
+
+          echo "========================================="
+          echo "Deploying REMAINING files: $REMAINING"
+          echo "========================================="
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          TAG="last-deployed-${{ inputs.target_env }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            BASE=$(git rev-list -n 1 "$TAG")
+          else
+            BASE="$BASELINE"
+          fi
+          git checkout -b temp-remaining-deploy "$BASE"
+
+          COMMITS=$(gh api "repos/$REPO/pulls/$PR/commits" --jq '.[].sha')
+          for COMMIT in $COMMITS; do
+            git cherry-pick "$COMMIT" --no-edit --strategy-option=theirs 2>/dev/null || {
+              git checkout --theirs . && git add -A && git cherry-pick --continue --no-edit || true
+            }
+          done
+
+          # Keep only remaining files
+          IFS=',' read -ra KEEP_FILES <<< "$REMAINING"
+          CHANGED=$(git diff --name-only "$BASE" HEAD)
+          for file in $CHANGED; do
+            ALLOWED=false
+            for kf in "${KEEP_FILES[@]}"; do
+              kf=$(echo "$kf" | xargs)
+              [ "$file" = "$kf" ] && ALLOWED=true && break
+            done
+            if [ "$ALLOWED" = false ]; then
+              git checkout "$BASE" -- "$file" 2>/dev/null || git rm -f "$file" 2>/dev/null || true
+            fi
+          done
+
+          git add -A
+          git diff --cached --quiet || git commit -m "Scoped deploy: PR #$PR remaining files"
+
+          echo "Files being deployed:"
+          git diff --name-only "$BASE" HEAD
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Databricks CLI
+        run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
+      - name: Install Dependencies
+        run: pip install --upgrade pip setuptools wheel
+
+      - name: Setup & Apply Terraform
+        if: inputs.target_env == 'prod'
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: |
+          terraform init
+          terraform plan -input=false
+          ${{ inputs.dry_run == false && 'terraform apply -auto-approve -input=false' || 'echo "Dry run: skipping apply"' }}
+
+      - name: Validate & Deploy bundle
+        env:
+          DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+          DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+        run: |
+          databricks bundle validate --target ${{ inputs.target_env }}
+          ${{ inputs.dry_run == false && format('databricks bundle deploy --target {0}', inputs.target_env) || 'echo "Dry run: skipping deploy"' }}
+
+      - name: Tag deployed state
+        if: inputs.dry_run == false
+        run: |
+          TAG="last-deployed-${{ inputs.target_env }}"
+          git tag -f "$TAG" HEAD
+          git push origin "$TAG" --force
+
+      - name: Summary
+        run: |
+          echo "## Remaining Files Deployed" >> "$GITHUB_STEP_SUMMARY"
+          echo "Files: ${{ needs.analyze-and-deploy.outputs.remaining_files }}" >> "$GITHUB_STEP_SUMMARY"
