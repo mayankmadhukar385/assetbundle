@@ -1,0 +1,235 @@
+
+  ═══════════════════════════════════════════════════════════════════════
+              APPROACH 1: PARAMETERIZED (Single Root Module)
+  ═══════════════════════════════════════════════════════════════════════
+
+                                ┌─────────────────────────────────┐
+                                │         GitHub Repository       │
+                                │    (main / feature branches)    │
+                                └────────────────┬────────────────┘
+                                                 │
+                                                 │  push / PR / manual trigger
+                                                 ▼
+                        ┌────────────────────────────────────────────────┐
+                        │              GitHub Actions CI/CD              │
+                        │                                                │
+                        │  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
+                        │  │  Lint &  │─▶│ Validate │─▶│   Plan &     │ │
+                        │  │  Format  │  │ (tf val) │  │   Deploy     │ │
+                        │  └──────────┘  └──────────┘  └──────────────┘ │
+                        │                                                │
+                        │         Environment Selection (input)          │
+                        └───────┬────────────────┬───────────────┬──────┘
+                                │                │               │
+                                ▼                ▼               ▼
+                        ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+                        │  dev.tfvars  │ │  uat.tfvars  │ │ prod.tfvars  │
+                        │              │ │              │ │              │
+                        │ region = ... │ │ region = ... │ │ region = ... │
+                        │ env = "dev"  │ │ env = "uat"  │ │ env = "prod" │
+                        │ instance =   │ │ instance =   │ │ instance =   │
+                        │  "t3.micro"  │ │  "t3.medium" │ │  "t3.large"  │
+                        └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+                               │                │                │
+                               └────────────────┼────────────────┘
+                                                │
+                                                ▼
+                        ┌────────────────────────────────────────────────┐
+                        │                                                │
+                        │              Terraform Root Module             │
+                        │                  (main.tf)                     │
+                        │                                                │
+                        │   ┌─────────────────────────────────────────┐  │
+                        │   │  variables.tf    │    providers.tf      │  │
+                        │   │  outputs.tf      │    backend.tf        │  │
+                        │   └─────────────────────────────────────────┘  │
+                        │                                                │
+                        └───────┬────────────────┬───────────────┬──────┘
+                                │                │               │
+                                ▼                ▼               ▼
+               ┌─────────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
+               │     VPC Module      │ │   EC2 Module    │ │     RDS Module      │
+               │                     │ │                 │ │                     │
+               │  • VPC              │ │  • EC2 Instance │ │  • DB Instance      │
+               │  • Subnets (pub/pr) │ │  • Security Grp │ │  • DB Subnet Group  │
+               │  • Internet Gateway │ │  • Key Pair     │ │  • Security Group   │
+               │  • NAT Gateway      │ │  • IAM Role     │ │  • Parameter Group  │
+               │  • Route Tables     │ │  • EBS Volumes  │ │  • Backups          │
+               │                     │ │                 │ │                     │
+               └──────────┬──────────┘ └────────┬────────┘ └──────────┬──────────┘
+                          │                     │                     │
+                          └─────────────────────┼─────────────────────┘
+                                                │
+                                                ▼
+                        ┌────────────────────────────────────────────────┐
+                        │                  AWS Cloud                     │
+                        │                                                │
+                        │   ┌──────────────────────────────────────┐    │
+                        │   │          VPC (10.0.0.0/16)           │    │
+                        │   │                                      │    │
+                        │   │  ┌────────────┐  ┌────────────────┐  │    │
+                        │   │  │  Public    │  │    Private     │  │    │
+                        │   │  │  Subnet   │  │    Subnet      │  │    │
+                        │   │  │           │  │                │  │    │
+                        │   │  │ ┌───────┐ │  │  ┌───────────┐ │  │    │
+                        │   │  │ │  EC2  │ │  │  │    RDS    │ │  │    │
+                        │   │  │ └───────┘ │  │  └───────────┘ │  │    │
+                        │   │  └────────────┘  └────────────────┘  │    │
+                        │   │                                      │    │
+                        │   └──────────────────────────────────────┘    │
+                        │                                                │
+                        └────────────────────────────────────────────────┘
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                              FLOW SUMMARY
+  ═══════════════════════════════════════════════════════════════════════
+
+   1. Developer pushes code / triggers workflow
+   2. CI/CD pipeline selects environment (dev / uat / prod)
+   3. Corresponding .tfvars file is loaded
+   4. Root module reads variables and calls child modules
+   5. VPC, EC2, RDS modules provision resources in AWS
+   6. State is stored in remote backend (S3 + DynamoDB)
+
+
+  ═══════════════════════════════════════════════════════════════════════
+              APPROACH 2: SEPARATE FOLDER (Per Environment)
+  ═══════════════════════════════════════════════════════════════════════
+
+                                ┌─────────────────────────────────┐
+                                │         GitHub Repository       │
+                                │    (main / feature branches)    │
+                                └────────────────┬────────────────┘
+                                                 │
+                                                 │  push / PR / manual trigger
+                                                 ▼
+                        ┌────────────────────────────────────────────────┐
+                        │              GitHub Actions CI/CD              │
+                        │                                                │
+                        │  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
+                        │  │  Lint &  │─▶│ Validate │─▶│   Plan &     │ │
+                        │  │  Format  │  │ (tf val) │  │   Deploy     │ │
+                        │  └──────────┘  └──────────┘  └──────────────┘ │
+                        │                                                │
+                        │         Environment Selection (input)          │
+                        └───────┬────────────────┬───────────────┬──────┘
+                                │                │               │
+                                ▼                ▼               ▼
+  ┌──────────────────────────┐ ┌──────────────────────────┐ ┌──────────────────────────┐
+  │   environments/dev/      │ │   environments/uat/      │ │   environments/prod/     │
+  │                          │ │                          │ │                          │
+  │  ├── main.tf             │ │  ├── main.tf             │ │  ├── main.tf             │
+  │  ├── variables.tf        │ │  ├── variables.tf        │ │  ├── variables.tf        │
+  │  ├── outputs.tf          │ │  ├── outputs.tf          │ │  ├── outputs.tf          │
+  │  ├── providers.tf        │ │  ├── providers.tf        │ │  ├── providers.tf        │
+  │  ├── backend.tf          │ │  ├── backend.tf          │ │  ├── backend.tf          │
+  │  └── terraform.tfvars    │ │  └── terraform.tfvars    │ │  └── terraform.tfvars    │
+  │                          │ │                          │ │                          │
+  │  region = "us-east-1"    │ │  region = "us-east-1"    │ │  region = "us-east-1"    │
+  │  env    = "dev"          │ │  env    = "uat"          │ │  env    = "prod"         │
+  │  instance = "t3.micro"   │ │  instance = "t3.medium"  │ │  instance = "t3.large"   │
+  │                          │ │                          │ │                          │
+  │  backend: s3/dev/state   │ │  backend: s3/uat/state   │ │  backend: s3/prod/state  │
+  └────────────┬─────────────┘ └────────────┬─────────────┘ └────────────┬─────────────┘
+               │                            │                            │
+               │     Each folder calls      │                            │
+               │     shared modules ────────┼────────────────────────────┘
+               │                            │
+               ▼                            ▼
+        ┌────────────────────────────────────────────────────────────┐
+        │                   modules/ (shared)                        │
+        │                                                            │
+        │  ┌─────────────────┐ ┌──────────────┐ ┌────────────────┐  │
+        │  │   modules/vpc/  │ │ modules/ec2/ │ │  modules/rds/  │  │
+        │  │                 │ │              │ │                │  │
+        │  │ • VPC           │ │ • EC2 Inst.  │ │ • DB Instance  │  │
+        │  │ • Subnets       │ │ • Security   │ │ • DB Subnet    │  │
+        │  │ • IGW           │ │   Group      │ │   Group        │  │
+        │  │ • NAT Gateway   │ │ • Key Pair   │ │ • Security Grp │  │
+        │  │ • Route Tables  │ │ • IAM Role   │ │ • Param Group  │  │
+        │  │                 │ │ • EBS Vols   │ │ • Backups      │  │
+        │  └────────┬────────┘ └──────┬───────┘ └───────┬────────┘  │
+        │           │                 │                  │           │
+        └───────────┼─────────────────┼──────────────────┼───────────┘
+                    │                 │                  │
+                    └─────────────────┼──────────────────┘
+                                      │
+                                      ▼
+                        ┌────────────────────────────────────────────────┐
+                        │                  AWS Cloud                     │
+                        │                                                │
+                        │   ┌──────────────────────────────────────┐    │
+                        │   │          VPC (10.0.0.0/16)           │    │
+                        │   │                                      │    │
+                        │   │  ┌────────────┐  ┌────────────────┐  │    │
+                        │   │  │  Public    │  │    Private     │  │    │
+                        │   │  │  Subnet   │  │    Subnet      │  │    │
+                        │   │  │           │  │                │  │    │
+                        │   │  │ ┌───────┐ │  │  ┌───────────┐ │  │    │
+                        │   │  │ │  EC2  │ │  │  │    RDS    │ │  │    │
+                        │   │  │ └───────┘ │  │  └───────────┘ │  │    │
+                        │   │  └────────────┘  └────────────────┘  │    │
+                        │   │                                      │    │
+                        │   └──────────────────────────────────────┘    │
+                        │                                                │
+                        └────────────────────────────────────────────────┘
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                         FOLDER STRUCTURE
+  ═══════════════════════════════════════════════════════════════════════
+
+   project-root/
+   ├── environments/
+   │   ├── dev/
+   │   │   ├── main.tf            # calls shared modules
+   │   │   ├── variables.tf
+   │   │   ├── outputs.tf
+   │   │   ├── providers.tf
+   │   │   ├── backend.tf         # unique S3 key per env
+   │   │   └── terraform.tfvars   # dev-specific values
+   │   ├── uat/
+   │   │   ├── main.tf
+   │   │   ├── variables.tf
+   │   │   ├── outputs.tf
+   │   │   ├── providers.tf
+   │   │   ├── backend.tf
+   │   │   └── terraform.tfvars
+   │   └── prod/
+   │       ├── main.tf
+   │       ├── variables.tf
+   │       ├── outputs.tf
+   │       ├── providers.tf
+   │       ├── backend.tf
+   │       └── terraform.tfvars
+   └── modules/
+       ├── vpc/
+       ├── ec2/
+       └── rds/
+
+  ═══════════════════════════════════════════════════════════════════════
+                              FLOW SUMMARY
+  ═══════════════════════════════════════════════════════════════════════
+
+   1. Developer pushes code / triggers workflow
+   2. CI/CD pipeline selects environment folder (dev / uat / prod)
+   3. Terraform init & apply runs INSIDE that folder
+   4. Each folder has its own backend.tf (isolated state per env)
+   5. Each folder calls shared modules from ../modules/
+   6. VPC, EC2, RDS modules provision resources in AWS
+
+  ═══════════════════════════════════════════════════════════════════════
+                     PARAMETERIZED vs SEPARATE FOLDER
+  ═══════════════════════════════════════════════════════════════════════
+
+   PARAMETERIZED (single root)        SEPARATE FOLDER (per env)
+   ─────────────────────────────       ─────────────────────────────
+   ✔ One set of .tf files              ✔ Full isolation per environment
+   ✔ Less code duplication             ✔ Independent state per folder
+   ✔ Easier to maintain                ✔ Can diverge configs if needed
+   ✘ Shared state risk if misconfigured✔ Safer for production workflows
+   ✘ Needs workspace or -var-file      ✘ Code duplication across envs
+                                       ✘ Harder to keep envs in sync
+
+  ═══════════════════════════════════════════════════════════════════════

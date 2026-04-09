@@ -155,49 +155,13 @@ jobs:
           echo "remaining_files=$REMAINING" >> "$GITHUB_OUTPUT"
           echo "has_remaining=$( [ -n "$REMAINING" ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
 
-      - name: Cherry-pick PR onto baseline (selected paths only)
+      - name: Show files being deployed
         if: steps.filter.outputs.deployed_paths != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
         run: |
-          BASELINE="${{ steps.baseline.outputs.baseline_sha }}"
-          PR="${{ inputs.pr_number }}"
-          DEPLOY_FILES="${{ steps.filter.outputs.deployed_paths }}"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b temp-path-deploy "$BASELINE"
-
-          # Cherry-pick all PR commits
-          COMMITS=$(gh api "repos/$REPO/pulls/$PR/commits" --jq '.[].sha')
-          for COMMIT in $COMMITS; do
-            git cherry-pick "$COMMIT" --no-edit --strategy-option=theirs 2>/dev/null || {
-              git checkout --theirs . && git add -A && git cherry-pick --continue --no-edit || true
-            }
-          done
-
-          # Revert everything NOT in the deploy list
-          IFS=',' read -ra KEEP_FILES <<< "$DEPLOY_FILES"
-          CHANGED=$(git diff --name-only "$BASELINE" HEAD)
-          for file in $CHANGED; do
-            ALLOWED=false
-            for kf in "${KEEP_FILES[@]}"; do
-              kf=$(echo "$kf" | xargs)
-              [ "$file" = "$kf" ] && ALLOWED=true && break
-            done
-            if [ "$ALLOWED" = false ]; then
-              echo "Reverting: $file"
-              git checkout "$BASELINE" -- "$file" 2>/dev/null || git rm -f "$file" 2>/dev/null || true
-            fi
-          done
-
-          git add -A
-          git diff --cached --quiet || git commit -m "Scoped deploy: PR #$PR paths [${{ inputs.deploy_paths }}]"
-
-          echo ""
-          echo "Files being deployed:"
-          git diff --name-only "$BASELINE" HEAD
+          echo "========================================="
+          echo "Files that will be deployed:"
+          echo "${{ steps.filter.outputs.deployed_paths }}" | tr ',' '\n'
+          echo "========================================="
 
       - name: Setup Python
         if: steps.filter.outputs.deployed_paths != ''
@@ -273,56 +237,12 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cherry-pick PR (remaining files only)
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
+      - name: Show remaining files being deployed
         run: |
-          BASELINE="${{ needs.analyze-and-deploy.outputs.baseline_sha }}"
-          PR="${{ inputs.pr_number }}"
-          REMAINING="${{ needs.analyze-and-deploy.outputs.remaining_files }}"
-
           echo "========================================="
-          echo "Deploying REMAINING files: $REMAINING"
+          echo "Deploying REMAINING files:"
+          echo "${{ needs.analyze-and-deploy.outputs.remaining_files }}" | tr ',' '\n'
           echo "========================================="
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          TAG="last-deployed-${{ inputs.target_env }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            BASE=$(git rev-list -n 1 "$TAG")
-          else
-            BASE="$BASELINE"
-          fi
-          git checkout -b temp-remaining-deploy "$BASE"
-
-          COMMITS=$(gh api "repos/$REPO/pulls/$PR/commits" --jq '.[].sha')
-          for COMMIT in $COMMITS; do
-            git cherry-pick "$COMMIT" --no-edit --strategy-option=theirs 2>/dev/null || {
-              git checkout --theirs . && git add -A && git cherry-pick --continue --no-edit || true
-            }
-          done
-
-          # Keep only remaining files
-          IFS=',' read -ra KEEP_FILES <<< "$REMAINING"
-          CHANGED=$(git diff --name-only "$BASE" HEAD)
-          for file in $CHANGED; do
-            ALLOWED=false
-            for kf in "${KEEP_FILES[@]}"; do
-              kf=$(echo "$kf" | xargs)
-              [ "$file" = "$kf" ] && ALLOWED=true && break
-            done
-            if [ "$ALLOWED" = false ]; then
-              git checkout "$BASE" -- "$file" 2>/dev/null || git rm -f "$file" 2>/dev/null || true
-            fi
-          done
-
-          git add -A
-          git diff --cached --quiet || git commit -m "Scoped deploy: PR #$PR remaining files"
-
-          echo "Files being deployed:"
-          git diff --name-only "$BASE" HEAD
 
       - name: Setup Python
         uses: actions/setup-python@v5
