@@ -1,0 +1,485 @@
+
+  ═══════════════════════════════════════════════════════════════════════
+              APPROACH 1: PARAMETERIZED (Single Root Module)
+  ═══════════════════════════════════════════════════════════════════════
+
+  Description:
+  In this approach, a single set of Terraform configuration files (root
+  module) is shared across all environments (dev, uat, prod). Environment-
+  specific values are supplied through separate .tfvars files (e.g.
+  dev.tfvars, uat.tfvars, prod.tfvars). The CI/CD pipeline selects the
+  appropriate .tfvars file at runtime using the -var-file flag or
+  Terraform workspaces. This keeps the codebase DRY — there is only one
+  copy of main.tf, variables.tf, etc. — and any infrastructure change
+  automatically applies to all environments. State isolation is achieved
+  via workspaces or distinct backend keys per environment.
+
+                                ┌─────────────────────────────────┐
+                                │         GitHub Repository       │
+                                │    (main / feature branches)    │
+                                └────────────────┬────────────────┘
+                                                 │
+                                                 │  push / PR / manual trigger
+                                                 ▼
+                        ┌────────────────────────────────────────────────┐
+                        │              GitHub Actions CI/CD              │
+                        │                                                │
+                        │  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
+                        │  │  Lint &  │─▶│ Validate │─▶│   Plan &     │ │
+                        │  │  Format  │  │ (tf val) │  │   Deploy     │ │
+                        │  └──────────┘  └──────────┘  └──────────────┘ │
+                        │                                                │
+                        │         Environment Selection (input)          │
+                        └───────┬────────────────┬───────────────┬──────┘
+                                │                │               │
+                                ▼                ▼               ▼
+                        ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+                        │  dev.tfvars  │ │  uat.tfvars  │ │ prod.tfvars  │
+                        │              │ │              │ │              │
+                        │ region = ... │ │ region = ... │ │ region = ... │
+                        │ env = "dev"  │ │ env = "uat"  │ │ env = "prod" │
+                        │ instance =   │ │ instance =   │ │ instance =   │
+                        │  "t3.micro"  │ │  "t3.medium" │ │  "t3.large"  │
+                        └──────┬───────┘ └──────┬───────┘ └──────┬───────┘
+                               │                │                │
+                               └────────────────┼────────────────┘
+                                                │
+                                                ▼
+                        ┌────────────────────────────────────────────────┐
+                        │                                                │
+                        │              Terraform Root Module             │
+                        │                  (main.tf)                     │
+                        │                                                │
+                        │   ┌─────────────────────────────────────────┐  │
+                        │   │  variables.tf    │    providers.tf      │  │
+                        │   │  outputs.tf      │    backend.tf        │  │
+                        │   └─────────────────────────────────────────┘  │
+                        │                                                │
+                        └───────┬────────────────┬───────────────┬──────┘
+                                │                │               │
+                                ▼                ▼               ▼
+               ┌─────────────────────┐ ┌─────────────────┐ ┌─────────────────────┐
+               │     VPC Module      │ │   EC2 Module    │ │     RDS Module      │
+               │                     │ │                 │ │                     │
+               │  • VPC              │ │  • EC2 Instance │ │  • DB Instance      │
+               │  • Subnets (pub/pr) │ │  • Security Grp │ │  • DB Subnet Group  │
+               │  • Internet Gateway │ │  • Key Pair     │ │  • Security Group   │
+               │  • NAT Gateway      │ │  • IAM Role     │ │  • Parameter Group  │
+               │  • Route Tables     │ │  • EBS Volumes  │ │  • Backups          │
+               │                     │ │                 │ │                     │
+               └──────────┬──────────┘ └────────┬────────┘ └──────────┬──────────┘
+                          │                     │                     │
+                          └─────────────────────┼─────────────────────┘
+                                                │
+                                                ▼
+                        ┌────────────────────────────────────────────────┐
+                        │                  AWS Cloud                     │
+                        │                                                │
+                        │   ┌──────────────────────────────────────┐    │
+                        │   │          VPC (10.0.0.0/16)           │    │
+                        │   │                                      │    │
+                        │   │  ┌────────────┐  ┌────────────────┐  │    │
+                        │   │  │  Public    │  │    Private     │  │    │
+                        │   │  │  Subnet   │  │    Subnet      │  │    │
+                        │   │  │           │  │                │  │    │
+                        │   │  │ ┌───────┐ │  │  ┌───────────┐ │  │    │
+                        │   │  │ │  EC2  │ │  │  │    RDS    │ │  │    │
+                        │   │  │ └───────┘ │  │  └───────────┘ │  │    │
+                        │   │  └────────────┘  └────────────────┘  │    │
+                        │   │                                      │    │
+                        │   └──────────────────────────────────────┘    │
+                        │                                                │
+                        └────────────────────────────────────────────────┘
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                              FLOW SUMMARY
+  ═══════════════════════════════════════════════════════════════════════
+
+   1. Developer pushes code / triggers workflow
+   2. CI/CD pipeline selects environment (dev / uat / prod)
+   3. Corresponding .tfvars file is loaded
+   4. Root module reads variables and calls child modules
+   5. VPC, EC2, RDS modules provision resources in AWS
+   6. State is stored in remote backend (S3 + DynamoDB)
+
+
+  ═══════════════════════════════════════════════════════════════════════
+              APPROACH 2: SEPARATE FOLDER (Per Environment)
+  ═══════════════════════════════════════════════════════════════════════
+
+  Description:
+  In this approach, each environment (dev, uat, prod) has its own
+  dedicated folder containing a full set of Terraform files (main.tf,
+  variables.tf, backend.tf, etc.). Each folder independently calls
+  shared reusable modules from a common modules/ directory. Because
+  every environment has its own backend.tf, state files are naturally
+  isolated — eliminating the risk of one environment accidentally
+  modifying another's resources. This approach is ideal when environments
+  need to diverge in configuration or when strict blast-radius control
+  is required, at the cost of some code duplication across folders.
+
+                                ┌─────────────────────────────────┐
+                                │         GitHub Repository       │
+                                │    (main / feature branches)    │
+                                └────────────────┬────────────────┘
+                                                 │
+                                                 │  push / PR / manual trigger
+                                                 ▼
+                        ┌────────────────────────────────────────────────┐
+                        │              GitHub Actions CI/CD              │
+                        │                                                │
+                        │  ┌──────────┐  ┌──────────┐  ┌──────────────┐ │
+                        │  │  Lint &  │─▶│ Validate │─▶│   Plan &     │ │
+                        │  │  Format  │  │ (tf val) │  │   Deploy     │ │
+                        │  └──────────┘  └──────────┘  └──────────────┘ │
+                        │                                                │
+                        │         Environment Selection (input)          │
+                        └───────┬────────────────┬───────────────┬──────┘
+                                │                │               │
+                                ▼                ▼               ▼
+  ┌──────────────────────────┐ ┌──────────────────────────┐ ┌──────────────────────────┐
+  │   environments/dev/      │ │   environments/uat/      │ │   environments/prod/     │
+  │                          │ │                          │ │                          │
+  │  ├── main.tf             │ │  ├── main.tf             │ │  ├── main.tf             │
+  │  ├── variables.tf        │ │  ├── variables.tf        │ │  ├── variables.tf        │
+  │  ├── outputs.tf          │ │  ├── outputs.tf          │ │  ├── outputs.tf          │
+  │  ├── providers.tf        │ │  ├── providers.tf        │ │  ├── providers.tf        │
+  │  ├── backend.tf          │ │  ├── backend.tf          │ │  ├── backend.tf          │
+  │  └── terraform.tfvars    │ │  └── terraform.tfvars    │ │  └── terraform.tfvars    │
+  │                          │ │                          │ │                          │
+  │  region = "us-east-1"    │ │  region = "us-east-1"    │ │  region = "us-east-1"    │
+  │  env    = "dev"          │ │  env    = "uat"          │ │  env    = "prod"         │
+  │  instance = "t3.micro"   │ │  instance = "t3.medium"  │ │  instance = "t3.large"   │
+  │                          │ │                          │ │                          │
+  │  backend: s3/dev/state   │ │  backend: s3/uat/state   │ │  backend: s3/prod/state  │
+  └────────────┬─────────────┘ └────────────┬─────────────┘ └────────────┬─────────────┘
+               │                            │                            │
+               │     Each folder calls      │                            │
+               │     shared modules ────────┼────────────────────────────┘
+               │                            │
+               ▼                            ▼
+        ┌────────────────────────────────────────────────────────────┐
+        │                   modules/ (shared)                        │
+        │                                                            │
+        │  ┌─────────────────┐ ┌──────────────┐ ┌────────────────┐  │
+        │  │   modules/vpc/  │ │ modules/ec2/ │ │  modules/rds/  │  │
+        │  │                 │ │              │ │                │  │
+        │  │ • VPC           │ │ • EC2 Inst.  │ │ • DB Instance  │  │
+        │  │ • Subnets       │ │ • Security   │ │ • DB Subnet    │  │
+        │  │ • IGW           │ │   Group      │ │   Group        │  │
+        │  │ • NAT Gateway   │ │ • Key Pair   │ │ • Security Grp │  │
+        │  │ • Route Tables  │ │ • IAM Role   │ │ • Param Group  │  │
+        │  │                 │ │ • EBS Vols   │ │ • Backups      │  │
+        │  └────────┬────────┘ └──────┬───────┘ └───────┬────────┘  │
+        │           │                 │                  │           │
+        └───────────┼─────────────────┼──────────────────┼───────────┘
+                    │                 │                  │
+                    └─────────────────┼──────────────────┘
+                                      │
+                                      ▼
+                        ┌────────────────────────────────────────────────┐
+                        │                  AWS Cloud                     │
+                        │                                                │
+                        │   ┌──────────────────────────────────────┐    │
+                        │   │          VPC (10.0.0.0/16)           │    │
+                        │   │                                      │    │
+                        │   │  ┌────────────┐  ┌────────────────┐  │    │
+                        │   │  │  Public    │  │    Private     │  │    │
+                        │   │  │  Subnet   │  │    Subnet      │  │    │
+                        │   │  │           │  │                │  │    │
+                        │   │  │ ┌───────┐ │  │  ┌───────────┐ │  │    │
+                        │   │  │ │  EC2  │ │  │  │    RDS    │ │  │    │
+                        │   │  │ └───────┘ │  │  └───────────┘ │  │    │
+                        │   │  └────────────┘  └────────────────┘  │    │
+                        │   │                                      │    │
+                        │   └──────────────────────────────────────┘    │
+                        │                                                │
+                        └────────────────────────────────────────────────┘
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                         FOLDER STRUCTURE
+  ═══════════════════════════════════════════════════════════════════════
+
+   project-root/
+   ├── environments/
+   │   ├── dev/
+   │   │   ├── main.tf            # calls shared modules
+   │   │   ├── variables.tf
+   │   │   ├── outputs.tf
+   │   │   ├── providers.tf
+   │   │   ├── backend.tf         # unique S3 key per env
+   │   │   └── terraform.tfvars   # dev-specific values
+   │   ├── uat/
+   │   │   ├── main.tf
+   │   │   ├── variables.tf
+   │   │   ├── outputs.tf
+   │   │   ├── providers.tf
+   │   │   ├── backend.tf
+   │   │   └── terraform.tfvars
+   │   └── prod/
+   │       ├── main.tf
+   │       ├── variables.tf
+   │       ├── outputs.tf
+   │       ├── providers.tf
+   │       ├── backend.tf
+   │       └── terraform.tfvars
+   └── modules/
+       ├── vpc/
+       ├── ec2/
+       └── rds/
+
+  ═══════════════════════════════════════════════════════════════════════
+                              FLOW SUMMARY
+  ═══════════════════════════════════════════════════════════════════════
+
+   1. Developer pushes code / triggers workflow
+   2. CI/CD pipeline selects environment folder (dev / uat / prod)
+   3. Terraform init & apply runs INSIDE that folder
+   4. Each folder has its own backend.tf (isolated state per env)
+   5. Each folder calls shared modules from ../modules/
+   6. VPC, EC2, RDS modules provision resources in AWS
+
+  ═══════════════════════════════════════════════════════════════════════
+     APPROACH 3: DYNAMIC TERRAFORM CODE GENERATION FROM METADATA
+  ═══════════════════════════════════════════════════════════════════════
+
+  Description:
+  Instead of writing Terraform .tf files by hand, you define your
+  infrastructure in a simple metadata file (YAML / JSON), and a code
+  generator (Python + Jinja2, Go, Jsonnet, etc.) reads that metadata
+  and AUTOMATICALLY GENERATES the Terraform .tf files. Developers only
+  edit the metadata — never the generated .tf files. This is like a
+  "template engine for infrastructure" and is ideal for large-scale
+  environments with many similar services (e.g. 50 microservices each
+  needing EC2 + RDS). Adding a new service is just a few lines of YAML.
+
+     metadata (YAML)  ──▶  generator script  ──▶  Terraform .tf files
+
+                        ┌─────────────────────────────────┐
+                        │         GitHub Repository       │
+                        └────────────────┬────────────────┘
+                                         │
+                                         ▼
+              ┌──────────────────────────────────────────────────┐
+              │              METADATA FILES (YAML/JSON)          │
+              │                                                  │
+              │  ┌────────────────────────────────────────────┐  │
+              │  │  environments:                             │  │
+              │  │    - name: dev                             │  │
+              │  │      region: us-east-1                     │  │
+              │  │      services:                             │  │
+              │  │        - name: user-api                    │  │
+              │  │          instance_type: t3.micro           │  │
+              │  │          db_engine: postgres               │  │
+              │  │        - name: order-api                   │  │
+              │  │          instance_type: t3.micro           │  │
+              │  │          db_engine: mysql                  │  │
+              │  │    - name: prod                            │  │
+              │  │      region: us-east-1                     │  │
+              │  │      services:                             │  │
+              │  │        - name: user-api                    │  │
+              │  │          instance_type: t3.large           │  │
+              │  │          db_engine: postgres               │  │
+              │  └────────────────────────────────────────────┘  │
+              │                                                  │
+              │  ☝ This is the ONLY file developers edit         │
+              └──────────────────────┬───────────────────────────┘
+                                     │
+                                     ▼
+              ┌──────────────────────────────────────────────────┐
+              │           CODE GENERATOR (Python/Jinja2)         │
+              │                                                  │
+              │   1. Reads metadata YAML                         │
+              │   2. Loops through environments & services       │
+              │   3. Renders Terraform .tf files from templates  │
+              │   4. Outputs generated/ folder                   │
+              │                                                  │
+              │   ┌────────────────────────────────────────────┐ │
+              │   │  JINJA2 TEMPLATES                          │ │
+              │   │                                            │ │
+              │   │  templates/                                │ │
+              │   │  ├── main.tf.j2                            │ │
+              │   │  ├── ec2.tf.j2                             │ │
+              │   │  ├── rds.tf.j2                             │ │
+              │   │  ├── sg.tf.j2                              │ │
+              │   │  └── backend.tf.j2                         │ │
+              │   └────────────────────────────────────────────┘ │
+              └──────────────────────┬───────────────────────────┘
+                                     │
+                                     ▼
+              ┌──────────────────────────────────────────────────┐
+              │         GENERATED TERRAFORM FILES                │
+              │                                                  │
+              │  generated/                                      │
+              │  ├── dev/                                        │
+              │  │   ├── main.tf          (auto-generated)       │
+              │  │   ├── user-api-ec2.tf  (auto-generated)       │
+              │  │   ├── user-api-rds.tf  (auto-generated)       │
+              │  │   ├── order-api-ec2.tf (auto-generated)       │
+              │  │   ├── order-api-rds.tf (auto-generated)       │
+              │  │   └── backend.tf       (auto-generated)       │
+              │  └── prod/                                       │
+              │      ├── main.tf          (auto-generated)       │
+              │      ├── user-api-ec2.tf  (auto-generated)       │
+              │      ├── user-api-rds.tf  (auto-generated)       │
+              │      └── backend.tf       (auto-generated)       │
+              │                                                  │
+              │  ⚠ NEVER edit these files manually!              │
+              └──────────────────────┬───────────────────────────┘
+                                     │
+                                     ▼
+              ┌──────────────────────────────────────────────────┐
+              │              GitHub Actions CI/CD                 │
+              │                                                  │
+              │  Step 1: python generate.py                      │
+              │  Step 2: cd generated/<env>                      │
+              │  Step 3: terraform init                          │
+              │  Step 4: terraform plan                          │
+              │  Step 5: terraform apply                         │
+              └──────────────────────┬───────────────────────────┘
+                                     │
+                                     ▼
+              ┌──────────────────────────────────────────────────┐
+              │                   AWS Cloud                       │
+              │                                                  │
+              │   ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+              │   │ user-api │  │ order-api│  │   ...    │      │
+              │   │ EC2+RDS  │  │ EC2+RDS  │  │          │      │
+              │   └──────────┘  └──────────┘  └──────────┘      │
+              └──────────────────────────────────────────────────┘
+
+
+  ═══════════════════════════════════════════════════════════════════════
+                  APPROACH 3 — FOLDER STRUCTURE
+  ═══════════════════════════════════════════════════════════════════════
+
+   project-root/
+   ├── metadata/
+   │   └── infrastructure.yaml        ← developers edit ONLY this
+   ├── templates/
+   │   ├── main.tf.j2                 ← Jinja2 Terraform templates
+   │   ├── ec2.tf.j2
+   │   ├── rds.tf.j2
+   │   ├── sg.tf.j2
+   │   ├── backend.tf.j2
+   │   └── providers.tf.j2
+   ├── generate.py                    ← Python script that generates TF
+   ├── generated/                     ← auto-generated (git-ignored)
+   │   ├── dev/
+   │   ├── uat/
+   │   └── prod/
+   └── modules/                       ← shared reusable modules
+       ├── vpc/
+       ├── ec2/
+       └── rds/
+
+  ═══════════════════════════════════════════════════════════════════════
+                  APPROACH 3 — FLOW SUMMARY
+  ═══════════════════════════════════════════════════════════════════════
+
+   1. Developer edits metadata/infrastructure.yaml
+   2. CI/CD runs python generate.py to produce .tf files
+   3. Pipeline selects environment folder (generated/dev, etc.)
+   4. terraform init → plan → apply inside that folder
+   5. Generated .tf files call shared modules/
+   6. State stored in remote backend (S3 + DynamoDB)
+
+
+  ═══════════════════════════════════════════════════════════════════════
+           ALL 3 APPROACHES — COMPARISON TABLE
+  ═══════════════════════════════════════════════════════════════════════
+
+   CRITERIA          │ APPROACH 1           │ APPROACH 2           │ APPROACH 3
+                     │ Parameterized        │ Separate Folder      │ Metadata Codegen
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Best For          │ Small teams,         │ Strict env           │ Large scale,
+                     │ simple infra         │ isolation needs      │ many services
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Code Duplication  │ Minimal              │ High                 │ None
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Scalability       │ Medium               │ Medium               │ Very High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Complexity        │ Low                  │ Medium               │ High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Env Isolation     │ Workspace / key      │ Full (own state)     │ Full (own state)
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Flexibility       │ Limited              │ High                 │ Very High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Tooling Needed    │ Terraform only       │ Terraform only       │ TF + Python/Jinja2
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Learning Curve    │ Low                  │ Low                  │ Medium-High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Add New Service   │ Edit .tfvars         │ Edit each env folder │ Add YAML line
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Add New Env       │ New .tfvars file     │ Copy folder          │ Add YAML block
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   State Management  │ Workspaces or        │ Separate backend     │ Separate backend
+                     │ backend keys         │ per folder           │ per generated folder
+
+
+  ═══════════════════════════════════════════════════════════════════════
+       ADVANTAGES & DISADVANTAGES — ALL 3 APPROACHES
+  ═══════════════════════════════════════════════════════════════════════
+
+                     │ APPROACH 1           │ APPROACH 2           │ APPROACH 3
+                     │ Parameterized        │ Separate Folder      │ Metadata Codegen
+   ══════════════════╪══════════════════════╪══════════════════════╪══════════════════════
+                     │                      │                      │
+   ✅ ADVANTAGES     │ ✔ One set of .tf     │ ✔ Full isolation     │ ✔ Massive scale —
+                     │   files (DRY)        │   per environment    │   100s of resources
+                     │                      │                      │   from one YAML
+                     │ ✔ Minimal code       │ ✔ Independent state  │
+                     │   duplication        │   per folder         │ ✔ Single source of
+                     │                      │                      │   truth (metadata)
+                     │ ✔ Easy to maintain   │ ✔ Can diverge        │
+                     │   & update           │   configs per env    │ ✔ Templates enforce
+                     │                      │                      │   consistency
+                     │ ✔ Quick to set up    │ ✔ Safer for prod     │
+                     │                      │   (blast-radius)     │ ✔ New service =
+                     │ ✔ Low learning       │                      │   5 lines of YAML
+                     │   curve              │ ✔ Easy to understand │
+                     │                      │   structure          │ ✔ Reduced human
+                     │                      │                      │   error
+                     │                      │                      │
+                     │                      │                      │ ✔ Great auditability
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+                     │                      │                      │
+   ❌ DISADVANTAGES  │ ✘ Shared state risk  │ ✘ Code duplication   │ ✘ Extra tooling
+                     │   if misconfigured   │   across env folders │   (Python, Jinja2)
+                     │                      │                      │
+                     │ ✘ Needs workspace    │ ✘ Harder to keep     │ ✘ Higher learning
+                     │   or -var-file       │   envs in sync       │   curve for team
+                     │                      │                      │
+                     │ ✘ Can't diverge      │ ✘ More files to      │ ✘ Debugging harder —
+                     │   config per env     │   manage overall     │   errors in template
+                     │                      │                      │
+                     │ ✘ Accidental apply   │ ✘ Adding resource =  │ ✘ Generated code
+                     │   to wrong env       │   update every folder│   harder to review
+                     │                      │                      │
+                     │ ✘ Limited flexibility│ ✘ Drift between envs │ ✘ Templates grow
+                     │   for env overrides  │   if not managed     │   complex over time
+                     │                      │                      │
+                     │                      │                      │ ✘ Overkill for small
+                     │                      │                      │   projects (< 5 svc)
+
+
+  ═══════════════════════════════════════════════════════════════════════
+           WHEN TO USE WHICH APPROACH
+  ═══════════════════════════════════════════════════════════════════════
+
+   SCENARIO                                │ RECOMMENDED APPROACH
+   ────────────────────────────────────────┼────────────────────────────
+   Small project, 1-3 environments,        │ Approach 1 (Parameterized)
+   few resources, small team               │
+   ────────────────────────────────────────┼────────────────────────────
+   Strict compliance / audit needs,        │ Approach 2 (Separate
+   envs must be fully isolated,            │ Folder)
+   prod needs different config than dev    │
+   ────────────────────────────────────────┼────────────────────────────
+   Many microservices (10+), multiple      │ Approach 3 (Metadata
+   envs, need to scale fast, platform      │ Codegen)
+   engineering team                        │
+
+  ═══════════════════════════════════════════════════════════════════════

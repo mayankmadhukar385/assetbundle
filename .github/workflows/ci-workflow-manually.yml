@@ -1,0 +1,138 @@
+name: CI Manual (folder-args)
+
+on:
+  workflow_dispatch:
+    inputs:
+      folders:
+        description: "Comma-separated folders to run (e.g. src,src/notebooks,test)"
+        required: true
+        default: "src,test"
+      run_pytest:
+        description: "Run unit tests (true/false)"
+        required: true
+        default: "true"
+      python_version:
+        description: "Python version"
+        required: true
+        default: "3.11"
+
+jobs:
+  ci_job:
+    name: CI job (manual)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ inputs.python_version }}
+
+      - name: Upgrade pip
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip --version
+
+      - name: Install dependencies
+        run: |
+          # Runtime deps
+          pip install -r requirements-pyspark.txt
+
+          # Test + lint tooling
+          pip install "pytest>=8.0.0" "pytest-html>=4.1.1"
+          pip install "pylint>=3.2.0" "nbqa>=1.8.0"
+
+      - name: Parse folder arguments
+        id: parse
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          FOLDERS_RAW="${{ inputs.folders }}"
+          echo "Input folders: $FOLDERS_RAW"
+
+          # Normalize: remove spaces around commas
+          FOLDERS_RAW="${FOLDERS_RAW// /}"
+
+          # Split by comma, validate existence, build a space-separated list
+          VALID_DIRS=""
+          IFS=',' read -ra DIRS <<< "$FOLDERS_RAW"
+
+          for d in "${DIRS[@]}"; do
+            if [ -z "$d" ]; then
+              continue
+            fi
+
+            if [ -d "$d" ]; then
+              echo " Found directory: $d"
+              VALID_DIRS="$VALID_DIRS $d"
+            else
+              echo " Skipping missing directory: $d"
+            fi
+          done
+
+          # Trim leading/trailing whitespace
+          VALID_DIRS="$(echo "$VALID_DIRS" | xargs)"
+
+          if [ -z "$VALID_DIRS" ]; then
+            echo " No valid directories found from input: $FOLDERS_RAW"
+            exit 1
+          fi
+
+          echo "VALID_DIRS=$VALID_DIRS" >> "$GITHUB_ENV"
+          echo "valid_dirs=$VALID_DIRS" >> "$GITHUB_OUTPUT"
+
+      # -------------------------
+      # LINT PYTHON FILES (.py)
+      # -------------------------
+      - name: Lint Python files with pylint (selected folders)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Linting Python under: $VALID_DIRS"
+          python -m pylint $VALID_DIRS
+
+      # -------------------------
+      # LINT NOTEBOOKS (.ipynb)
+      # Only runs for folders that exist, and only if they contain ipynb files
+      # -------------------------
+      - name: Lint notebooks with nbqa + pylint (selected folders)
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Notebook lint scan in: $VALID_DIRS"
+          FOUND_NOTEBOOKS="false"
+
+          for d in $VALID_DIRS; do
+            if find "$d" -type f -name "*.ipynb" | grep -q .; then
+              FOUND_NOTEBOOKS="true"
+              echo " Notebooks found in: $d"
+              # Run nbqa pylint on the directory
+              nbqa pylint "$d" --nbqa-shell
+            else
+              echo "ℹ No notebooks in: $d"
+            fi
+          done
+
+          if [ "$FOUND_NOTEBOOKS" = "false" ]; then
+            echo "ℹ No notebooks found in selected folders; skipping nbqa."
+          fi
+
+      # -------------------------
+      # RUN UNIT TESTS (optional)
+      # -------------------------
+      - name: Run pytest (optional)
+        if: ${{ inputs.run_pytest == 'true' }}
+        run: |
+          pytest -q --disable-warnings --maxfail=1 \
+            --html=pytest_report.html --self-contained-html
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: pytest_report.html

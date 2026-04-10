@@ -15,6 +15,8 @@ dependencies = [
 dev = [
     "pytest",
     "ruff",
+    "pylint>=3.2.0",
+    "nbqa>=1.8.0",
     "databricks-dlt",
     "databricks-connect>=15.4,<15.5",
     "ipykernel",
@@ -27,5 +29,36 @@ main = "dabproject.main:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# -------------------------
+# Ruff configuration
+# -------------------------
 [tool.ruff]
 line-length = 120
+
+# -------------------------
+# Pylint configuration (Databricks-friendly)
+# -------------------------
+[tool.pylint.format]
+max-line-length = 120
+
+[tool.pylint.messages_control]
+disable = [
+    # Docstring noise (optional)
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+
+    # Ruff handles formatting/import sorting; keep pylint focused on correctness
+    "line-too-long",
+    "wrong-import-order",
+
+    # Databricks/CI environment gaps (e.g., dlt not available in CI)
+    "import-error",
+]
+
+[tool.pylint.variables]
+# Databricks runtime-injected globals
+additional-builtins = ["spark", "dbutils", "display"]
+
+[tool.pylint.reports]
+score = false

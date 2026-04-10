@@ -1,81 +1,176 @@
 name: CD Workflow (On Release Published)
+
 on:
   release:
     types: [published]
-run-name: Deploy release ${{ github.event.release.tag_name }} to stage and prod 
+
+run-name: Deploy release ${{ github.event.release.tag_name }} to stage and prod
+
+concurrency:
+  group: release-deploy-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
+  verify-release-source:
+    name: Verify release tag is from main
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag commit belongs to main
+        run: |
+          git fetch origin main --no-tags --depth=1
+
+          TAG_NAME="${{ github.event.release.tag_name }}"
+          TAG_SHA=$(git rev-list -n 1 "$TAG_NAME")
+
+          echo "Release tag: $TAG_NAME"
+          echo "Release tag SHA: $TAG_SHA"
+
+          if ! git branch -r --contains "$TAG_SHA" | grep -q "origin/main"; then
+            echo "ERROR: Release tag does not point to a commit on main."
+            exit 1
+          fi
+
   cd-deploy-stage:
     name: Deploy to stage
+    needs: verify-release-source
     runs-on: ubuntu-latest
     environment: stage
+    timeout-minutes: 60
+
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install Databricks CLI
         run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install setuptools wheel
-      # PAT auth via env vars (recommended)
-      - name: Configure Databricks (PAT)
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check Databricks auth (stage)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          # Optional: quick sanity check (won't print token)
-          databricks current-user me
-      - name: Validate bundle
+        run: databricks current-user me
+
+      - name: Validate bundle (stage)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks bundle validate --target stage
+
       - name: Deploy bundle
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks bundle deploy --target stage
+
   cd-deploy-prod:
     name: Deploy to prod
-    needs: cd-deploy-stage
+    needs:
+      - verify-release-source
+      - cd-deploy-stage
     runs-on: ubuntu-latest
     environment: prod
+    timeout-minutes: 60
+
     steps:
       - name: Checkout release tag
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.release.tag_name }}
           fetch-depth: 0
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
       - name: Install Databricks CLI
         run: curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh
+
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install setuptools wheel
-      # PAT auth via env vars (recommended)
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init (prod)
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform init
+
+      - name: Terraform Validate (prod)
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform validate
+
+      - name: Terraform Plan (prod)
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform plan -input=false
+
+      - name: Terraform Apply (prod)
+        working-directory: terraform/envs/prod
+        env:
+          TF_VAR_databricks_host: ${{ secrets.DATABRICKS_HOST }}
+          TF_VAR_databricks_token: ${{ secrets.DATABRICKS_TOKEN }}
+          TF_VAR_catalog_name: assetbundles
+          TF_VAR_schema_name: prod
+          TF_VAR_environment: prod
+        run: terraform apply -auto-approve -input=false
+
       - name: Configure Databricks (PAT)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-        run: |
-          # Optional: quick sanity check (won't print token)
-          databricks current-user me
-      - name: Validate bundle
+        run: databricks current-user me
+
+      - name: Validate bundle (prod)
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
         run: databricks bundle validate --target prod
+
       - name: Deploy bundle
         env:
           DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
