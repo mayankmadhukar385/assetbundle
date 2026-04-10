@@ -391,104 +391,95 @@
            ALL 3 APPROACHES — COMPARISON TABLE
   ═══════════════════════════════════════════════════════════════════════
 
-  ┌────────────────────┬──────────────────┬──────────────────┬──────────────────┐
-  │     CRITERIA       │  APPROACH 1      │  APPROACH 2      │  APPROACH 3      │
-  │                    │  Parameterized   │  Separate Folder │  Metadata Codegen│
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Best For           │ Small teams,     │ Strict env       │ Large scale,     │
-  │                    │ simple infra     │ isolation needs  │ many services    │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Code Duplication   │ Minimal          │ High             │ None             │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Scalability        │ Medium           │ Medium           │ Very High        │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Complexity         │ Low              │ Medium           │ High             │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Env Isolation      │ Workspace/key    │ Full (own state) │ Full (own state) │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Flexibility        │ Limited          │ High             │ Very High        │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Tooling Needed     │ Terraform only   │ Terraform only   │ TF + Python/     │
-  │                    │                  │                  │ Jinja2           │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Learning Curve     │ Low              │ Low              │ Medium-High      │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Add New Service    │ Edit .tfvars     │ Edit each env    │ Add YAML line    │
-  │                    │                  │ folder           │                  │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ Add New Env        │ New .tfvars file │ Copy folder      │ Add YAML block   │
-  ├────────────────────┼──────────────────┼──────────────────┼──────────────────┤
-  │ State Management   │ Workspaces or    │ Separate backend │ Separate backend │
-  │                    │ backend keys     │ per folder       │ per generated    │
-  │                    │                  │                  │ folder           │
-  └────────────────────┴──────────────────┴──────────────────┴──────────────────┘
+   CRITERIA          │ APPROACH 1           │ APPROACH 2           │ APPROACH 3
+                     │ Parameterized        │ Separate Folder      │ Metadata Codegen
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Best For          │ Small teams,         │ Strict env           │ Large scale,
+                     │ simple infra         │ isolation needs      │ many services
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Code Duplication  │ Minimal              │ High                 │ None
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Scalability       │ Medium               │ Medium               │ Very High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Complexity        │ Low                  │ Medium               │ High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Env Isolation     │ Workspace / key      │ Full (own state)     │ Full (own state)
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Flexibility       │ Limited              │ High                 │ Very High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Tooling Needed    │ Terraform only       │ Terraform only       │ TF + Python/Jinja2
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Learning Curve    │ Low                  │ Low                  │ Medium-High
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Add New Service   │ Edit .tfvars         │ Edit each env folder │ Add YAML line
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   Add New Env       │ New .tfvars file     │ Copy folder          │ Add YAML block
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+   State Management  │ Workspaces or        │ Separate backend     │ Separate backend
+                     │ backend keys         │ per folder           │ per generated folder
 
 
   ═══════════════════════════════════════════════════════════════════════
-       ADVANTAGES & DISADVANTAGES — ALL 3 APPROACHES (UNIFIED)
+       ADVANTAGES & DISADVANTAGES — ALL 3 APPROACHES
   ═══════════════════════════════════════════════════════════════════════
 
-  ┌──────────────────────┬──────────────────────────┬──────────────────────────┬──────────────────────────┐
-  │                      │  APPROACH 1              │  APPROACH 2              │  APPROACH 3              │
-  │                      │  Parameterized           │  Separate Folder         │  Metadata Codegen        │
-  ├──────────────────────┼──────────────────────────┼──────────────────────────┼──────────────────────────┤
-  │                      │                          │                          │                          │
-  │  ✅ ADVANTAGES       │  ✔ One set of .tf files  │  ✔ Full isolation per    │  ✔ Massive scale —       │
-  │                      │    (DRY codebase)        │    environment           │    100s of resources     │
-  │                      │                          │                          │    from one YAML         │
-  │                      │  ✔ Minimal code          │  ✔ Independent state     │                          │
-  │                      │    duplication            │    per folder            │  ✔ Single source of      │
-  │                      │                          │                          │    truth (metadata)      │
-  │                      │  ✔ Easy to maintain       │  ✔ Can diverge configs   │                          │
-  │                      │    & update               │    per environment       │  ✔ Templates enforce     │
-  │                      │                          │                          │    consistency           │
-  │                      │  ✔ Quick to set up        │  ✔ Safer for production  │                          │
-  │                      │                          │    (blast-radius ctrl)   │  ✔ Add new service =     │
-  │                      │  ✔ Low learning curve     │                          │    5 lines of YAML       │
-  │                      │                          │  ✔ Easy to understand    │                          │
-  │                      │                          │    structure             │  ✔ Reduced human error    │
-  │                      │                          │                          │                          │
-  │                      │                          │                          │  ✔ Great auditability     │
-  ├──────────────────────┼──────────────────────────┼──────────────────────────┼──────────────────────────┤
-  │                      │                          │                          │                          │
-  │  ❌ DISADVANTAGES    │  ✘ Shared state risk if  │  ✘ Code duplication      │  ✘ Extra tooling needed  │
-  │                      │    misconfigured         │    across env folders    │    (Python, Jinja2)      │
-  │                      │                          │                          │                          │
-  │                      │  ✘ Needs workspace or    │  ✘ Harder to keep envs   │  ✘ Higher learning       │
-  │                      │    -var-file to switch   │    in sync               │    curve for team        │
-  │                      │                          │                          │                          │
-  │                      │  ✘ Can't diverge config  │  ✘ More files to manage  │  ✘ Debugging harder —    │
-  │                      │    per environment       │    overall               │    errors in template    │
-  │                      │                          │                          │    vs TF                 │
-  │                      │  ✘ Accidental apply to   │  ✘ Adding new resource   │                          │
-  │                      │    wrong env possible    │    = update every folder │  ✘ Generated code harder │
-  │                      │                          │                          │    to review in PRs      │
-  │                      │  ✘ Limited flexibility   │  ✘ Drift between envs    │                          │
-  │                      │    for env overrides     │    if not managed        │  ✘ Templates grow        │
-  │                      │                          │                          │    complex over time     │
-  │                      │                          │                          │                          │
-  │                      │                          │                          │  ✘ Overkill for small    │
-  │                      │                          │                          │    projects (< 5 svc)    │
-  └──────────────────────┴──────────────────────────┴──────────────────────────┴──────────────────────────┘
+                     │ APPROACH 1           │ APPROACH 2           │ APPROACH 3
+                     │ Parameterized        │ Separate Folder      │ Metadata Codegen
+   ══════════════════╪══════════════════════╪══════════════════════╪══════════════════════
+                     │                      │                      │
+   ✅ ADVANTAGES     │ ✔ One set of .tf     │ ✔ Full isolation     │ ✔ Massive scale —
+                     │   files (DRY)        │   per environment    │   100s of resources
+                     │                      │                      │   from one YAML
+                     │ ✔ Minimal code       │ ✔ Independent state  │
+                     │   duplication        │   per folder         │ ✔ Single source of
+                     │                      │                      │   truth (metadata)
+                     │ ✔ Easy to maintain   │ ✔ Can diverge        │
+                     │   & update           │   configs per env    │ ✔ Templates enforce
+                     │                      │                      │   consistency
+                     │ ✔ Quick to set up    │ ✔ Safer for prod     │
+                     │                      │   (blast-radius)     │ ✔ New service =
+                     │ ✔ Low learning       │                      │   5 lines of YAML
+                     │   curve              │ ✔ Easy to understand │
+                     │                      │   structure          │ ✔ Reduced human
+                     │                      │                      │   error
+                     │                      │                      │
+                     │                      │                      │ ✔ Great auditability
+   ──────────────────┼──────────────────────┼──────────────────────┼──────────────────────
+                     │                      │                      │
+   ❌ DISADVANTAGES  │ ✘ Shared state risk  │ ✘ Code duplication   │ ✘ Extra tooling
+                     │   if misconfigured   │   across env folders │   (Python, Jinja2)
+                     │                      │                      │
+                     │ ✘ Needs workspace    │ ✘ Harder to keep     │ ✘ Higher learning
+                     │   or -var-file       │   envs in sync       │   curve for team
+                     │                      │                      │
+                     │ ✘ Can't diverge      │ ✘ More files to      │ ✘ Debugging harder —
+                     │   config per env     │   manage overall     │   errors in template
+                     │                      │                      │
+                     │ ✘ Accidental apply   │ ✘ Adding resource =  │ ✘ Generated code
+                     │   to wrong env       │   update every folder│   harder to review
+                     │                      │                      │
+                     │ ✘ Limited flexibility│ ✘ Drift between envs │ ✘ Templates grow
+                     │   for env overrides  │   if not managed     │   complex over time
+                     │                      │                      │
+                     │                      │                      │ ✘ Overkill for small
+                     │                      │                      │   projects (< 5 svc)
 
 
   ═══════════════════════════════════════════════════════════════════════
            WHEN TO USE WHICH APPROACH
   ═══════════════════════════════════════════════════════════════════════
 
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  SCENARIO                              │  RECOMMENDED APPROACH      │
-  ├────────────────────────────────────────┼────────────────────────────┤
-  │  Small project, 1-3 environments,      │  Approach 1 (Parameterized)│
-  │  few resources, small team             │                            │
-  ├────────────────────────────────────────┼────────────────────────────┤
-  │  Strict compliance / audit needs,      │  Approach 2 (Separate      │
-  │  envs must be fully isolated,          │  Folder)                   │
-  │  prod needs different config than dev  │                            │
-  ├────────────────────────────────────────┼────────────────────────────┤
-  │  Many microservices (10+), multiple    │  Approach 3 (Metadata      │
-  │  envs, need to scale fast, platform    │  Codegen)                  │
-  │  engineering team                      │                            │
-  └────────────────────────────────────────┴────────────────────────────┘
+   SCENARIO                                │ RECOMMENDED APPROACH
+   ────────────────────────────────────────┼────────────────────────────
+   Small project, 1-3 environments,        │ Approach 1 (Parameterized)
+   few resources, small team               │
+   ────────────────────────────────────────┼────────────────────────────
+   Strict compliance / audit needs,        │ Approach 2 (Separate
+   envs must be fully isolated,            │ Folder)
+   prod needs different config than dev    │
+   ────────────────────────────────────────┼────────────────────────────
+   Many microservices (10+), multiple      │ Approach 3 (Metadata
+   envs, need to scale fast, platform      │ Codegen)
+   engineering team                        │
 
   ═══════════════════════════════════════════════════════════════════════
