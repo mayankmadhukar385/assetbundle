@@ -315,13 +315,20 @@ environments:
 | Criteria | Approach 1 — Parameterized | Approach 2 — Separate Folder | Approach 3 — Metadata Codegen |
 |----------|---------------------------|------------------------------|-------------------------------|
 | **Best For** | Small teams, simple infra | Strict env isolation needs | Large scale, many services |
-| **Code Duplication** | Minimal | High | None |
+| **Code Duplication** | ✅ Minimal | ❌ High | ✅ None |
 | **Scalability** | Medium | Medium | Very High |
 | **Complexity** | Low | Medium | High |
-| **Env Isolation** | Workspace / backend keys | Full (own state per folder) | Full (own state per folder) |
-| **Flexibility** | Limited | High | Very High |
-| **Tooling Needed** | Terraform only | Terraform only | Terraform + Python/Jinja2 |
-| **Learning Curve** | Low | Low | Medium-High |
+| **Env Isolation** | ❌ Workspace / backend keys | ✅ Full (own state per folder) | ✅ Full (own state per folder) |
+| **Flexibility** | ❌ Limited | ✅ High | ✅ Very High |
+| **Tooling Needed** | ✅ Terraform only | ✅ Terraform only | ❌ Terraform + Python/Jinja2 |
+| **Learning Curve** | ✅ Low | ✅ Low | ❌ Medium-High |
+| **Production Safety** | ❌ Risk if misconfigured | ✅ Safer (blast-radius control) | ✅ Safer (isolated folders) |
+| **CI/CD Complexity** | ✅ Simple (one workflow) | ❌ More complex (per-folder) | ❌ Most complex (generate + apply) |
+| **Rollback** | ❌ Affects all envs | ✅ Per-env rollback | ✅ Per-env rollback |
+| **Team Scalability** | ❌ Merge conflicts likely | ✅ Parallel work per env | ✅ Parallel work per env |
+| **Onboarding Speed** | ✅ Fast | ❌ Slower | ❌ Slowest |
+| **Consistency** | ✅ Guaranteed (same code) | ❌ Manual effort needed | ✅ Enforced via templates |
+| **Customization** | ❌ Needs conditionals | ✅ Easy per-env overrides | ✅ Template-level control |
 | **Add New Service** | Edit `.tfvars` | Edit each env folder | Add YAML entry |
 | **Add New Env** | New `.tfvars` file | Copy entire folder | Add YAML block |
 | **State Management** | Workspaces or backend keys | Separate backend per folder | Separate backend per generated folder |
@@ -332,34 +339,82 @@ environments:
 
 ### Approach 1 — Parameterized (Single Root Module)
 
-| ✅ Advantages | ❌ Disadvantages |
-|---------------|-----------------|
-| One set of `.tf` files — DRY codebase | Shared state risk if misconfigured |
-| Minimal code duplication | Needs workspace or `-var-file` to switch envs |
-| Easy to maintain & update | All envs share same TF code — can't diverge per env |
-| Quick to set up | Accidental apply to wrong env if workspace not set correctly |
-| Low learning curve | Limited flexibility for env-specific overrides |
+#### ✅ Advantages
+
+| # | Advantage | Details |
+|---|-----------|--------|
+| 1 | **Minimal Code Duplication** | Single set of `.tf` files shared across all environments. Only `.tfvars` files differ per environment. Bug fixes and updates apply to all environments at once. |
+| 2 | **Easier Maintenance** | One place to update resource definitions. Reduces risk of configuration drift between environments. Smaller codebase to review and manage. |
+| 3 | **Consistency Across Environments** | All environments use the exact same Terraform logic. Guarantees dev, uat, and prod are structurally identical. Easier to enforce standards and compliance. |
+| 4 | **Faster Onboarding** | New team members learn one structure. Adding a new environment = just adding a new `.tfvars` file. Less cognitive overhead. |
+| 5 | **Simpler CI/CD Pipeline** | One workflow with an environment input parameter. Pipeline logic is straightforward: `terraform plan -var-file=envs/<env>.tfvars` |
+| 6 | **DRY Principle** | Follows software engineering best practices (Don't Repeat Yourself). Less code = fewer places for bugs to hide. |
+
+#### ❌ Disadvantages
+
+| # | Disadvantage | Details |
+|---|-------------|--------|
+| 1 | **Shared State Risk** | If workspace or `-var-file` is misconfigured, you could accidentally apply dev changes to prod. Requires strict CI/CD guardrails to prevent cross-env errors. |
+| 2 | **Limited Environment Divergence** | Hard to have environment-specific resources (e.g., extra monitoring only in prod). Conditional logic (`count`, `for_each`) can make code complex. |
+| 3 | **Blast Radius** | A bad change to `main.tf` affects ALL environments. No way to test a structural change in dev without it being available in prod code path. |
+| 4 | **Complex Variable Management** | As environments grow, `.tfvars` files can become large. Difficult to manage environment-specific overrides cleanly. |
+| 5 | **State File Management** | Requires Terraform workspaces or dynamic backend config to isolate state per environment. Workspace misuse can lead to state corruption. |
+| 6 | **Harder Rollback** | Rolling back one environment means rolling back the shared code, which may affect other environments. |
+
+---
 
 ### Approach 2 — Separate Folder (Per Environment)
 
-| ✅ Advantages | ❌ Disadvantages |
-|---------------|-----------------|
-| Full isolation per environment | Code duplication across env folders |
-| Independent state per folder | Harder to keep envs in sync when modules change |
-| Can diverge configs per environment | More files to manage overall |
-| Safer for production workflows (blast-radius control) | Adding a new resource means updating every env folder |
-| Easy to understand structure | Drift between envs if not carefully managed |
+#### ✅ Advantages
+
+| # | Advantage | Details |
+|---|-----------|--------|
+| 1 | **Full Environment Isolation** | Each environment has its own directory and state file. Zero risk of accidentally applying to the wrong environment. Complete separation of concerns. |
+| 2 | **Independent Deployments** | Can deploy dev without touching uat or prod. Each environment can be at a different version. Supports progressive rollout strategies. |
+| 3 | **Environment-Specific Customization** | Easy to add resources only in certain environments (e.g., extra logging in prod, reduced infra in dev). No need for conditional logic or count hacks. |
+| 4 | **Safer for Production** | Prod folder can have stricter review and approval gates. Changes can be tested in dev/uat folders first, then manually promoted to prod. Reduces accidental production impact. |
+| 5 | **Independent State Management** | Each folder has its own `backend.tf`. No workspace confusion. State files are naturally isolated. |
+| 6 | **Easier Rollback** | Can roll back one environment independently. Git history per folder makes it clear what changed where. |
+| 7 | **Team Scalability** | Different teams can own different environment folders. Parallel development without merge conflicts. |
+
+#### ❌ Disadvantages
+
+| # | Disadvantage | Details |
+|---|-------------|--------|
+| 1 | **Code Duplication** | `main.tf`, `variables.tf`, `providers.tf` are repeated per env. Changes must be manually copied across all folders. Higher risk of environments drifting apart over time. |
+| 2 | **Harder to Keep Environments in Sync** | A fix in `dev/` must be manually replicated to `uat/` and `prod/`. Easy to forget updating one environment. Requires discipline or automation to stay consistent. |
+| 3 | **Larger Codebase** | More files to manage, review, and maintain. PR reviews become longer. Increased repository size. |
+| 4 | **More Complex CI/CD** | Pipeline must know which folder to target. May need separate workflows or matrix strategies. More pipeline configuration to maintain. |
+| 5 | **Slower Onboarding** | New developers must understand the folder convention. More files to navigate. Can be confusing if folders have diverged. |
+| 6 | **Module Version Drift** | Different env folders might reference different module versions if not carefully managed. Can lead to inconsistent infrastructure. |
+
+---
 
 ### Approach 3 — Metadata-Driven Code Generation
 
-| ✅ Advantages | ❌ Disadvantages |
-|---------------|-----------------|
-| Massive scale — manage 100s of resources from one YAML | Extra tooling needed (Python, Jinja2) in CI/CD pipeline |
-| Single source of truth (metadata file) | Higher learning curve — team must understand templates |
-| Templates enforce consistency across all resources | Debugging harder — errors may be in template, not in TF |
-| Adding a new service = a few lines of YAML | Generated code harder to review in PRs |
-| Reduced human error — no manual `.tf` file editing | Templates become complex over time as requirements grow |
-| Great auditability — easy to see what's deployed from YAML | Overkill for small projects with fewer than 5 services |
+#### ✅ Advantages
+
+| # | Advantage | Details |
+|---|-----------|--------|
+| 1 | **Massive Scale** | Manage hundreds of resources from a single YAML file. Adding 50 microservices = 50 entries in YAML, not 50 manual module blocks. |
+| 2 | **Single Source of Truth** | The metadata file is the only input developers edit. Everything else is auto-generated. Easy to audit what's deployed. |
+| 3 | **Consistency via Templates** | Jinja2 templates enforce standards across all resources. Changing a tag convention = update one template, regenerate all. |
+| 4 | **Speed of Change** | Adding a new service = 5 lines of YAML. Adding a new environment = one YAML block. Run `python generate.py` and done. |
+| 5 | **Reduced Human Error** | No manual `.tf` file editing. Generated code is deterministic and repeatable. Eliminates copy-paste mistakes. |
+| 6 | **Great Auditability** | Easy to see what's deployed by reading the YAML. Metadata file serves as living documentation. |
+| 7 | **Full Environment Isolation** | Each generated folder has its own `backend.tf`. State files are naturally isolated per environment. |
+
+#### ❌ Disadvantages
+
+| # | Disadvantage | Details |
+|---|-------------|--------|
+| 1 | **Extra Tooling Required** | Need Python, Jinja2 (or similar) installed in CI/CD pipeline. Additional dependencies to manage and maintain. |
+| 2 | **Higher Learning Curve** | Team must understand both Terraform AND the template/generator system. Debugging requires knowledge of Jinja2 syntax + Terraform HCL. |
+| 3 | **Debugging Complexity** | Errors may be in the template, not in the generated Terraform code. Stack traces can be harder to trace back to the root cause. |
+| 4 | **Generated Code Review** | Auto-generated PRs are harder to review meaningfully. Reviewers must trust the templates rather than reading every generated line. |
+| 5 | **Template Maintenance** | Templates become complex over time as requirements grow. Edge cases and conditionals accumulate in Jinja2 logic. |
+| 6 | **Overkill for Small Projects** | Not worth the setup overhead for projects with fewer than 5 services. Adds unnecessary complexity for simple infrastructure. |
+| 7 | **Harder Rollback** | Must regenerate from a previous YAML version. Rolling back means re-running the generator, not just reverting `.tf` files. |
 
 ---
 
@@ -368,12 +423,25 @@ environments:
 | Scenario | Recommended Approach |
 |----------|---------------------|
 | Small project, 1–3 environments, few resources, small team | **Approach 1** — Parameterized |
-| Strict compliance / audit needs, envs must be fully isolated, prod needs different config than dev | **Approach 2** — Separate Folder |
-| Many microservices (10+), multiple envs, need to scale fast, platform engineering team | **Approach 3** — Metadata Codegen |
 | Rapid prototyping or POC with minimal setup | **Approach 1** — Parameterized |
+| Strict compliance / audit needs, envs must be fully isolated | **Approach 2** — Separate Folder |
+| Prod needs different config/resources than dev | **Approach 2** — Separate Folder |
 | Regulated industry (finance, healthcare) with change control per env | **Approach 2** — Separate Folder |
-| Standardized platform with repeatable patterns across teams | **Approach 3** — Metadata Codegen |
+| Many microservices (10+), multiple envs, need to scale fast | **Approach 3** — Metadata Codegen |
+| Platform engineering team managing standardized patterns | **Approach 3** — Metadata Codegen |
+| **Hybrid** — want isolation + less duplication | **Approach 2 + 3** — Separate folders generated from templates |
 
 ---
 
-> **Tip:** You can also combine approaches — for example, use **Approach 2** for folder isolation but add a lightweight **code generator** to reduce duplication across env folders.
+## Recommendation Summary
+
+| Team / Project Size | Recommended |
+|---------------------|-------------|
+| **Small teams / simple infra** | Approach 1 — Parameterized |
+| **Large teams / strict compliance** | Approach 2 — Separate Folder |
+| **Platform teams / massive scale** | Approach 3 — Metadata Codegen |
+| **Best of both worlds** | Hybrid — Separate folders that call shared modules, optionally generated from templates |
+
+---
+
+> **Tip:** You can combine approaches — for example, use **Approach 2** for folder isolation but add a lightweight **code generator** (Approach 3) to reduce duplication across env folders. This gives you the safety of isolation with the efficiency of automation.
