@@ -425,73 +425,51 @@
 
 
   ═══════════════════════════════════════════════════════════════════════
-           ADVANTAGES & DISADVANTAGES — ALL 3 APPROACHES
+       ADVANTAGES & DISADVANTAGES — ALL 3 APPROACHES (UNIFIED)
   ═══════════════════════════════════════════════════════════════════════
 
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  APPROACH 1: PARAMETERIZED (Single Root Module)                     │
-  ├──────────────────────────────────┬───────────────────────────────────┤
-  │  ✅ ADVANTAGES                   │  ❌ DISADVANTAGES                │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  One set of .tf files (DRY)      │  Shared state risk if            │
-  │                                  │  misconfigured                   │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Minimal code duplication        │  Needs workspace or -var-file    │
-  │                                  │  to switch environments          │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Easy to maintain & update       │  All envs share same TF code —   │
-  │                                  │  can't diverge per env           │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Quick to set up                 │  Accidental apply to wrong env   │
-  │                                  │  if workspace not set correctly  │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Low learning curve              │  Limited flexibility for         │
-  │                                  │  env-specific overrides          │
-  └──────────────────────────────────┴───────────────────────────────────┘
-
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  APPROACH 2: SEPARATE FOLDER (Per Environment)                      │
-  ├──────────────────────────────────┬───────────────────────────────────┤
-  │  ✅ ADVANTAGES                   │  ❌ DISADVANTAGES                │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Full isolation per environment  │  Code duplication across env     │
-  │                                  │  folders                         │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Independent state per folder    │  Harder to keep envs in sync     │
-  │                                  │  when modules change             │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Can diverge configs per env     │  More files to manage overall    │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Safer for production workflows  │  Adding a new resource means     │
-  │  (blast-radius control)          │  updating every env folder       │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Easy to understand structure    │  Drift between envs if not       │
-  │                                  │  carefully managed               │
-  └──────────────────────────────────┴───────────────────────────────────┘
-
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │  APPROACH 3: METADATA-DRIVEN CODE GENERATION                        │
-  ├──────────────────────────────────┬───────────────────────────────────┤
-  │  ✅ ADVANTAGES                   │  ❌ DISADVANTAGES                │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Massive scale — manage 100s of  │  Extra tooling needed (Python,   │
-  │  resources from one YAML         │  Jinja2) in CI/CD pipeline       │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Single source of truth          │  Higher learning curve — team    │
-  │  (metadata file)                 │  must understand templates       │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Consistency — templates enforce │  Debugging harder — errors may   │
-  │  standards across all resources  │  be in template, not in TF       │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Adding a new service = 5 lines  │  Generated code harder to review │
-  │  of YAML                         │  in PRs                          │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Reduced human error — no manual │  Templates become complex over   │
-  │  .tf file editing                │  time as requirements grow       │
-  ├──────────────────────────────────┼───────────────────────────────────┤
-  │  Great auditability — easy to    │  Overkill for small projects     │
-  │  see what's deployed from YAML   │  with < 5 services               │
-  └──────────────────────────────────┴───────────────────────────────────┘
+  ┌──────────────────────┬──────────────────────────┬──────────────────────────┬──────────────────────────┐
+  │                      │  APPROACH 1              │  APPROACH 2              │  APPROACH 3              │
+  │                      │  Parameterized           │  Separate Folder         │  Metadata Codegen        │
+  ├──────────────────────┼──────────────────────────┼──────────────────────────┼──────────────────────────┤
+  │                      │                          │                          │                          │
+  │  ✅ ADVANTAGES       │  ✔ One set of .tf files  │  ✔ Full isolation per    │  ✔ Massive scale —       │
+  │                      │    (DRY codebase)        │    environment           │    100s of resources     │
+  │                      │                          │                          │    from one YAML         │
+  │                      │  ✔ Minimal code          │  ✔ Independent state     │                          │
+  │                      │    duplication            │    per folder            │  ✔ Single source of      │
+  │                      │                          │                          │    truth (metadata)      │
+  │                      │  ✔ Easy to maintain       │  ✔ Can diverge configs   │                          │
+  │                      │    & update               │    per environment       │  ✔ Templates enforce     │
+  │                      │                          │                          │    consistency           │
+  │                      │  ✔ Quick to set up        │  ✔ Safer for production  │                          │
+  │                      │                          │    (blast-radius ctrl)   │  ✔ Add new service =     │
+  │                      │  ✔ Low learning curve     │                          │    5 lines of YAML       │
+  │                      │                          │  ✔ Easy to understand    │                          │
+  │                      │                          │    structure             │  ✔ Reduced human error    │
+  │                      │                          │                          │                          │
+  │                      │                          │                          │  ✔ Great auditability     │
+  ├──────────────────────┼──────────────────────────┼──────────────────────────┼──────────────────────────┤
+  │                      │                          │                          │                          │
+  │  ❌ DISADVANTAGES    │  ✘ Shared state risk if  │  ✘ Code duplication      │  ✘ Extra tooling needed  │
+  │                      │    misconfigured         │    across env folders    │    (Python, Jinja2)      │
+  │                      │                          │                          │                          │
+  │                      │  ✘ Needs workspace or    │  ✘ Harder to keep envs   │  ✘ Higher learning       │
+  │                      │    -var-file to switch   │    in sync               │    curve for team        │
+  │                      │                          │                          │                          │
+  │                      │  ✘ Can't diverge config  │  ✘ More files to manage  │  ✘ Debugging harder —    │
+  │                      │    per environment       │    overall               │    errors in template    │
+  │                      │                          │                          │    vs TF                 │
+  │                      │  ✘ Accidental apply to   │  ✘ Adding new resource   │                          │
+  │                      │    wrong env possible    │    = update every folder │  ✘ Generated code harder │
+  │                      │                          │                          │    to review in PRs      │
+  │                      │  ✘ Limited flexibility   │  ✘ Drift between envs    │                          │
+  │                      │    for env overrides     │    if not managed        │  ✘ Templates grow        │
+  │                      │                          │                          │    complex over time     │
+  │                      │                          │                          │                          │
+  │                      │                          │                          │  ✘ Overkill for small    │
+  │                      │                          │                          │    projects (< 5 svc)    │
+  └──────────────────────┴──────────────────────────┴──────────────────────────┴──────────────────────────┘
 
 
   ═══════════════════════════════════════════════════════════════════════
